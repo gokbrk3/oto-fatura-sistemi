@@ -14,4 +14,7 @@
 # requests
 # selenium
 
+# Otomatik commit için
+watchdog
+
 
