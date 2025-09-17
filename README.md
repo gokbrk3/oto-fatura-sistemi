@@ -5,19 +5,26 @@ Bu repository, Python projeleri için standart şablon içerir.
 ## Özellikler
 - AI entegrasyonu için kullanıcı tercihleri
 - Python proje yapısı
-- Git konfigürasyonu
+- Otomatik Git commit/push sistemi
 - README şablonu
 
 ## Kullanım
 1. Bu repository'yi template olarak kullanın
 2. Yeni proje oluştururken "Use this template" seçin
 3. Cursor'da açın ve geliştirmeye başlayın
+4. `python auto_commit_watcher.py` çalıştırarak otomatik sistemi başlatın
 
 ## AI Entegrasyonu
 - Her yeni konuşmada `KULLANICI_TERCIHLERI.md` otomatik okunur
 - Kullanıcı tercihleri hatırlanır
 - Proje durumu analiz edilir
 - Kaldığı yerden devam edilir
+
+## Otomatik Sistem
+- Dosya değişikliklerini izler (.py, .md, .json, .txt, .xlsx)
+- 5 dakikada bir otomatik commit yapar
+- Otomatik GitHub'a push yapar
+- Hiçbir şey yapmanıza gerek yok
 
 ## Dosya Yapısı
 ```
@@ -26,6 +33,7 @@ proje-adi/
 ├── README.md                  # Proje açıklaması
 ├── main.py                    # Ana Python dosyası
 ├── requirements.txt           # Python kütüphaneleri
+├── auto_commit_watcher.py     # Otomatik commit sistemi
 └── .gitignore                # Git ignore dosyası
 ```
 
