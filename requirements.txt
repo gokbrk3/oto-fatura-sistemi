@@ -1,0 +1,17 @@
+# Python kütüphaneleri
+# Bu dosyayı kullanarak gerekli kütüphaneleri kurabilirsiniz
+# Kullanım: pip install -r requirements.txt
+
+# Temel kütüphaneler
+# tkinter  # Python ile birlikte gelir
+# os       # Python ile birlikte gelir
+# sys      # Python ile birlikte gelir
+# datetime # Python ile birlikte gelir
+
+# Ek kütüphaneler (ihtiyaca göre ekleyin)
+# pandas
+# openpyxl
+# requests
+# selenium
+
+
