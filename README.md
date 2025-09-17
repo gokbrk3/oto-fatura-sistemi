@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Python Proje Şablonu
 
 Bu repository, Python projeleri için standart şablon içerir.
@@ -38,3 +39,7 @@ proje-adi/
 ```
 
 
+=======
+# oto-fatur-sistemi
+GUI tabanlı fatura oluşturma sistemi
+>>>>>>> b08352a913216569907f8fc98b620a7fca5f8512
