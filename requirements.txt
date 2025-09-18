@@ -2,19 +2,16 @@
 # Bu dosyayı kullanarak gerekli kütüphaneleri kurabilirsiniz
 # Kullanım: pip install -r requirements.txt
 
-# Temel kütüphaneler
-# tkinter  # Python ile birlikte gelir
-# os       # Python ile birlikte gelir
-# sys      # Python ile birlikte gelir
-# datetime # Python ile birlikte gelir
+# GUI için (Python ile birlikte gelir)
+# tkinter
 
-# Ek kütüphaneler (ihtiyaca göre ekleyin)
-# pandas
-# openpyxl
-# requests
-# selenium
+# Excel işlemleri
+openpyxl>=3.0.0
+pandas>=1.3.0
 
-# Otomatik commit için
-watchdog
+# Web automation
+selenium>=4.0.0
+webdriver-manager>=3.8.0
 
-
+# Dosya izleme (otomatik commit için)
+watchdog>=2.1.0

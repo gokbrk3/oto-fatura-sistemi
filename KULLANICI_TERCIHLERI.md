@@ -10,6 +10,7 @@
 - **Stil**: Basit, anlaşılır, yorumlu kod
 - **Hata yönetimi**: Kullanıcı dostu hata mesajları
 - **GUI**: Tkinter kullanımı (mevcut proje)
+- **KORUMA KURALI**: Mevcut kodları değiştirme, sadece gerekli yerlere ekleme yap
 
 ## Sık Kullanılan Komutlar
 - "Programı çalıştır" → Gerekli kütüphaneleri kur + çalıştır

@@ -233,19 +233,6 @@ def load_kartlar(kart_table):
             data = json.load(f)
         for values in data:
             kart_table.insert("", "end", values=values)
-        
-        # Ürün listesini güncelle
-        urun_listesi = []
-        for child in kart_table.get_children():
-            tur, ad, b, f, k = kart_table.item(child, "values")
-            urun_listesi.append(f"{tur} ({ad})")
-        
-        # Combobox'ları güncelle (urun_combo henüz tanımlanmamış olabilir)
-        try:
-            if 'urun_combo' in globals():
-                urun_combo['values'] = urun_listesi
-        except:
-            pass
     except:
         pass
 # --- Ürün Kartları Sonu ---
@@ -301,7 +288,7 @@ def init_queue_view(frame_parent):
     from tkinter import ttk
 
     # Kuyruk tablosu
-    queue_frame = tk.LabelFrame(frame_parent, text="Fatura Kuyruğu", padx=10, pady=10, bg="#d0d0d0")
+    queue_frame = tk.LabelFrame(frame_parent, text="Fatura Kuyruğu", padx=10, pady=10)
     queue_frame.pack(fill="both", expand=True, pady=10)
 
     columns = ("Unvan", "Vergi No", "Açıklama")
@@ -312,9 +299,6 @@ def init_queue_view(frame_parent):
         queue_table.column(col, width=200, anchor="center")
 
     queue_table.pack(fill="both", expand=True)
-    
-    # Zebra görünümü uygula
-    apply_zebra_striping(queue_table)
 
 def refresh_queue_view():
     """GUI'deki kuyruk tablosunu günceller"""
@@ -333,18 +317,6 @@ def refresh_queue_view():
 
 
 
-
-# ================== START ZEBRA STRIPING ==================
-def apply_zebra_striping(table):
-    """Tabloya zebra görünümü (çizgili satırlar) uygular"""
-    table.tag_configure("even", background="white")
-    table.tag_configure("odd", background="#e0e0e0")  # Daha koyu gri
-    for i, item in enumerate(table.get_children()):
-        if i % 2 == 0:
-            table.item(item, tags=("even",))
-        else:
-            table.item(item, tags=("odd",))
-# ================== END ZEBRA STRIPING ==================
 
 # ================== START CONTROLLER ==================
 def add_kart(tur_combo, ad_entry, birim_entry, fiyat_entry, kdv_combo,
@@ -368,12 +340,6 @@ def add_kart(tur_combo, ad_entry, birim_entry, fiyat_entry, kdv_combo,
         current = list(urun_combo['values'])
         if full_name not in current:
             urun_combo['values'] = current + [full_name]
-    
-    # Zebra görünümünü yenile
-    apply_zebra_striping(kart_table)
-    
-    # Dosyaya kaydet
-    save_kartlar(kart_table)
 
     # Alanları sıfırla
     tur_combo.set("")
@@ -404,9 +370,6 @@ def add_urun(urun_combo, miktar_entry, birim_entry, fiyat_entry, kdv_entry,
         urun_table.item(editing_id, values=values)
     else:  # Yeni ekleme
         urun_table.insert("", "end", values=values)
-    
-    # Zebra görünümünü yenile
-    apply_zebra_striping(urun_table)
 
     # Alanları sıfırla
     urun_combo.set("")
@@ -501,8 +464,7 @@ def create_temp_excel_from_table(
 def gui_main():
     root = tk.Tk()
     root.title("Oto Fatura Programı")
-    root.configure(bg="#d0d0d0")  # Ana pencere arka plan rengi - daha koyu gri
-    global urun_table, kart_table
+    global urun_table
     global musteri_vkn, musteri_unvan, musteri_adi, musteri_soyadi
     global musteri_vd_sehir, musteri_vd, musteri_adres, musteri_adres_sehir, musteri_ilce
     global fatura_aciklama
@@ -531,52 +493,52 @@ def gui_main():
         table.bind("<Button-3>", on_right_click)
     # --- Sağ Tık Silme Menüsü Sonu ---
 
-    # --- Zebra Görünümü ---
-    # Global apply_zebra_striping fonksiyonu kullanılacak
-    # --- Zebra Görünümü Sonu ---
-
     # --- Notebook (Sekmeler) ---
-    # Notebook'u gri Frame ile sarmalayalım
-    notebook_frame = tk.Frame(root, bg="#d0d0d0")
-    notebook_frame.pack(fill="both", expand=True)
-    
-    # Notebook stilini önce ayarla
-    style = ttk.Style()
-    style.theme_use('clam')  # Tema değiştir
-    style.configure("TNotebook", background="#d0d0d0", borderwidth=0)
-    style.configure("TNotebook.Tab", background="#d0d0d0", foreground="black", borderwidth=0)
-    style.map("TNotebook.Tab", background=[("selected", "white"), ("active", "#e0e0e0")])
-    
-    # Zebra görünümü için Treeview stilleri
-    style.configure("Treeview", background="white", foreground="black", fieldbackground="white")
-    style.configure("Treeview.Heading", background="#d0d0d0", foreground="black")
-    style.map("Treeview", background=[("selected", "#0078d4")])
-    
-    notebook = ttk.Notebook(notebook_frame, style="TNotebook")
-    notebook.pack(fill="both", expand=True, padx=2, pady=2)
-    
-    # Notebook'u zorla gri yap
-    try:
-        notebook.configure(style="TNotebook")
-        notebook.tk.call("ttk::style", "configure", "TNotebook", "-background", "#d0d0d0")
-        notebook.tk.call("ttk::style", "configure", "TNotebook.Tab", "-background", "#d0d0d0")
-    except:
-        pass
-    
-    # Entry ve Text widget'ları beyaz kalacak, sadece label'lar gri olacak
-    # Tkinter Entry ve Text widget'ları beyaz kalacak (varsayılan)
-    # Label'lar için arka plan rengi ayarla
-    root.option_add("*Label*background", "#d0d0d0")
+    notebook = ttk.Notebook(root)
+    notebook.pack(fill="both", expand=True)
     # --- Notebook Sonu ---
 
     # ===================================================
     # ==== SEKME 1: FATURA ====
     # ===================================================
-    frame_fatura = tk.Frame(notebook, padx=10, pady=10, bg="#d0d0d0")
-    notebook.add(frame_fatura, text="Fatura Taslak Oluştur")
+    frame_fatura = tk.Frame(notebook, padx=10, pady=10)
+    notebook.add(frame_fatura, text="Fatura")
+    # --- Fatura İsimlendirme ---
+    frame_fatura_isim = tk.LabelFrame(frame_fatura, text="Fatura İsimlendirme", padx=10, pady=10)
+    frame_fatura_isim.pack(fill="x", pady=10)
+
+    # Şube seçimi (müşteri çağırıldığında combobox doldurulacak)
+    tk.Label(frame_fatura_isim, text="Şube:").grid(row=0, column=0, sticky="w")
+    sube_combo = ttk.Combobox(frame_fatura_isim, values=[], width=27)
+    sube_combo.grid(row=0, column=1, padx=5, pady=2)
+
+    # Personel adı
+    tk.Label(frame_fatura_isim, text="Personel:").grid(row=1, column=0, sticky="w")
+    personel_entry = tk.Entry(frame_fatura_isim, width=30)
+    personel_entry.grid(row=1, column=1, padx=5, pady=2)
+
+    # İşlem türü (SRV = servis, STŞ = satış, MGZ = mağaza/ye. parça)
+    tk.Label(frame_fatura_isim, text="İşlem Türü:").grid(row=2, column=0, sticky="w")
+    islem_combo = ttk.Combobox(frame_fatura_isim, values=["SRV", "STŞ", "YEDEK PARÇA"], width=10)
+    islem_combo.set("SRV")
+    islem_combo.grid(row=2, column=1, padx=5, pady=2)
+
+    # Fatura adını oluştur ve göster
+    def olustur_fatura_adi():
+        unvan = musteri_unvan.get().strip() or "UNVAN"
+        sube = sube_combo.get().strip() or "SUBE"
+        personel = personel_entry.get().strip() or "PERSONEL"
+        islem = islem_combo.get().strip() or "ISLEM"
+
+        filename = f"{unvan} - {sube} - {personel} {islem}.pdf"
+        tk.messagebox.showinfo("Fatura Adı", f"Oluşturulacak fatura adı:\n\n{filename}")
+        return filename
+
+    tk.Button(frame_fatura_isim, text="Fatura Adı Oluştur", command=olustur_fatura_adi).grid(row=3, column=0, columnspan=2, pady=10)
+    # --- Fatura İsimlendirme Sonu ---
 
     # --- Müşteri Bilgileri ---
-    frame_musteri = tk.LabelFrame(frame_fatura, text="Müşteri Bilgileri", padx=10, pady=10, bg="#d0d0d0")
+    frame_musteri = tk.LabelFrame(frame_fatura, text="Müşteri Bilgileri", padx=10, pady=10)
     frame_musteri.pack(fill="x", pady=10)
 
     # Satır 0: VKN/TCKN, Unvan, Adı, Soyadı, Adres (2 satır kaplar), Şubeler
@@ -658,8 +620,9 @@ def gui_main():
 
                 # Şube combobox doldur
                 subeler_list = [s.strip() for s in mevcut[8].split(",") if s.strip()]
-                # sube_combo kaldırıldı
-                # sube_combo kaldırıldı
+                sube_combo["values"] = subeler_list
+                if subeler_list:
+                    sube_combo.set(subeler_list[0])
                 return
 
         # Yeni müşteri ekleniyor
@@ -673,7 +636,9 @@ def gui_main():
 
         # Şube combobox doldur
         subeler_list = [s.strip() for s in values[8].split(",") if s.strip()]
-        # sube_combo kaldırıldı
+        sube_combo["values"] = subeler_list
+        if subeler_list:
+            sube_combo.set(subeler_list[0])
 
     def musteri_cagir():
         win = tk.Toplevel(root)
@@ -729,7 +694,9 @@ def gui_main():
 
             # Şube combobox doldur
             subeler_list = [s.strip() for s in values[8].split(",") if s.strip()]
-            # sube_combo kaldırıldı
+            sube_combo["values"] = subeler_list
+            if subeler_list:
+                sube_combo.set(subeler_list[0])
 
             win.destroy()
 
@@ -748,7 +715,7 @@ def gui_main():
         musteri_adres.delete("1.0", "end")
 
     # --- Butonlar (yan yana, sağ tarafa hizalı) ---
-    btn_frame = tk.Frame(frame_musteri, bg="#d0d0d0")
+    btn_frame = tk.Frame(frame_musteri)
     btn_frame.grid(row=1, column=8, columnspan=4, padx=5, pady=5, sticky="e")
 
     tk.Button(btn_frame, text="Kaydet", command=kaydet_musteri).pack(side="left", padx=5)
@@ -759,7 +726,7 @@ def gui_main():
 
 
     # --- Ürün Tablosu ---
-    frame_urun = tk.LabelFrame(frame_fatura, text="Ürünler", padx=10, pady=10, bg="#d0d0d0")
+    frame_urun = tk.LabelFrame(frame_fatura, text="Ürünler", padx=10, pady=10)
     frame_urun.pack(fill="both", expand=True, padx=10, pady=5)
 
     columns = ("Ürün Adı", "Miktar", "Birim", "Birim Fiyat", "KDV %", "İskonto %", "Açıklama")
@@ -774,56 +741,12 @@ def gui_main():
     scroll.pack(side="right", fill="y")
     attach_context_delete(urun_table)
 
-    # Zebra görünümü uygula
-    apply_zebra_striping(urun_table)
-
-    # Inline fiyat düzenleme fonksiyonu
-    def edit_price(event):
-        item = urun_table.selection()[0] if urun_table.selection() else None
-        if not item:
-            return
-        
-        # Mevcut fiyatı al
-        values = list(urun_table.item(item, "values"))
-        current_price = values[3]  # Birim Fiyat
-        
-        # Hücrenin konumunu bul
-        bbox = urun_table.bbox(item, "#4")  # "Birim Fiyat" sütunu
-        if not bbox:
-            return
-        
-        # Entry widget'ı oluştur
-        edit_entry = tk.Entry(urun_table, font=("Arial", 9))
-        edit_entry.place(x=bbox[0], y=bbox[1], width=bbox[2], height=bbox[3])
-        edit_entry.insert(0, current_price)
-        edit_entry.select_range(0, tk.END)
-        edit_entry.focus()
-        
-        def save_price():
-            try:
-                new_price = float(edit_entry.get())
-                values[3] = str(new_price)
-                urun_table.item(item, values=values)
-                edit_entry.destroy()
-            except ValueError:
-                tk.messagebox.showerror("Hata", "Geçerli bir sayı giriniz!")
-                edit_entry.destroy()
-        
-        def cancel_edit():
-            edit_entry.destroy()
-        
-        # Event'leri bağla
-        edit_entry.bind("<Return>", lambda e: save_price())
-        edit_entry.bind("<Escape>", lambda e: cancel_edit())
-        edit_entry.bind("<FocusOut>", lambda e: save_price())  # Başka yere tıklayınca kaydet
-
-    # Çift tıklama event'ini bağla
-    urun_table.bind("<Double-1>", edit_price)
+  
 
     # --- Ürün Tablosu Sonu ---
 
     # --- Ürün Ekleme Alanı ---
-    frame_add = tk.LabelFrame(frame_fatura, text="Ürün Ekleme Alanı", padx=10, pady=10, bg="#d0d0d0")
+    frame_add = tk.LabelFrame(frame_fatura, text="Ürün Ekleme Alanı", padx=10, pady=10)
     frame_add.pack(fill="x", pady=10)
 
     tk.Label(frame_add, text="Ürün:").grid(row=0, column=0, sticky="w")
@@ -831,9 +754,9 @@ def gui_main():
     
     # Linked fields için özel değişkenler
     urun_combo.linked_fields = {
-            "birim": None,
-            "fiyat": None,
-            "kdv": None
+        "birim": None,
+        "fiyat": None,
+        "kdv": None
     }
     urun_combo.kart_table = None
     urun_combo.grid(row=1, column=0, padx=5)
@@ -955,10 +878,6 @@ def gui_main():
                 urun_table.insert("", "end", values=(
                     full_name, "1", b, f, k, "0", ""
                 ))
-            
-            # Zebra görünümünü yenile
-            apply_zebra_striping(urun_table)
-            
             bulk_win.destroy()
 
         tk.Button(bulk_win, text="Faturaya İlave Et", command=add_selected_products).pack(pady=10)
@@ -970,7 +889,7 @@ def gui_main():
 
     # ================== START FATURA GENEL AÇIKLAMA ==================
     # --- Fatura Genel Açıklama ---
-    frame_fatura_aciklama = tk.LabelFrame(frame_fatura, text="Fatura Açıklaması", padx=10, pady=10, bg="#d0d0d0")
+    frame_fatura_aciklama = tk.LabelFrame(frame_fatura, text="Fatura Açıklaması", padx=10, pady=10)
     frame_fatura_aciklama.pack(fill="x", pady=10)
 
     fatura_aciklama = tk.Text(frame_fatura_aciklama, width=100, height=3)
@@ -979,7 +898,7 @@ def gui_main():
     # ================== END FATURA GENEL AÇIKLAMA ==================
 
         # ================== START FATURA TASLAK BUTONU ==================
-    btn_frame_fatura = tk.Frame(frame_fatura, bg="#d0d0d0")
+    btn_frame_fatura = tk.Frame(frame_fatura)
     btn_frame_fatura.pack(pady=5)
 
     btn_fatura_olustur = tk.Button(
@@ -995,380 +914,9 @@ def gui_main():
 
 
     # ===================================================
-    # ==== SEKME 2: FATURA KES ====
+    # ==== SEKME 2: ÜRÜN KARTLARI ====
     # ===================================================
-    frame_fatura_kes = tk.Frame(notebook, padx=10, pady=10, bg="#d0d0d0")
-    notebook.add(frame_fatura_kes, text="Fatura Kes")
-    
-    # --- Fatura İsimlendirme ---
-    frame_fatura_secim = tk.LabelFrame(frame_fatura_kes, text="Fatura İsimlendirme", padx=10, pady=10, bg="#d0d0d0")
-    frame_fatura_secim.pack(fill="x", pady=10)
-    
-    # Şube, Personel, İşlem seçimi
-    tk.Label(frame_fatura_secim, text="Şube:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-    fatura_kes_sube_combo = ttk.Combobox(frame_fatura_secim, values=[], width=15)
-    fatura_kes_sube_combo.grid(row=0, column=1, padx=5, pady=5)
-    
-    tk.Label(frame_fatura_secim, text="Personel:").grid(row=0, column=2, sticky="w", padx=5, pady=5)
-    fatura_kes_personel_entry = tk.Entry(frame_fatura_secim, width=20)
-    fatura_kes_personel_entry.grid(row=0, column=3, padx=5, pady=5)
-    
-    tk.Label(frame_fatura_secim, text="İşlem Türü:").grid(row=0, column=4, sticky="w", padx=5, pady=5)
-    fatura_kes_islem_combo = ttk.Combobox(frame_fatura_secim, values=["SRV", "STŞ", "YEDEK PARÇA"], width=12)
-    fatura_kes_islem_combo.set("SRV")
-    fatura_kes_islem_combo.grid(row=0, column=5, padx=5, pady=5)
-    
-    # --- Fatura Listesi ---
-    frame_fatura_listesi = tk.LabelFrame(frame_fatura_kes, text="Fatura Listesi", padx=10, pady=10, bg="#d0d0d0")
-    frame_fatura_listesi.pack(fill="both", expand=True, pady=10)
-    
-    # Fatura listesi tablosu
-    fatura_kes_columns = ("Müşteri", "Vergi No", "Tutar", "Durum", "Tarih", "Fatura Türü")
-    fatura_kes_table = ttk.Treeview(frame_fatura_listesi, columns=fatura_kes_columns, show="headings", height=12)
-    
-    for col in fatura_kes_columns:
-        fatura_kes_table.heading(col, text=col)
-        fatura_kes_table.column(col, width=120, anchor="center")
-    
-    fatura_kes_table.pack(fill="both", expand=True, pady=10)
-    attach_context_delete(fatura_kes_table)
-    
-    # Zebra görünümü uygula
-    apply_zebra_striping(fatura_kes_table)
-    
-    # Fatura seçildiğinde şube bilgilerini yükle
-    def on_fatura_selection(event):
-        selected = fatura_kes_table.selection()
-        if not selected:
-            return
-        
-        # Seçili faturayı al
-        values = fatura_kes_table.item(selected[0], "values")
-        if not values:
-            return
-        
-        musteri_adi = values[0]  # Müşteri adı
-        
-        # Müşteri bilgilerini bul ve şubeleri al
-        try:
-            with open("musteriler.json", "r", encoding="utf-8") as f:
-                musteri_data = json.load(f)
-            
-            for musteri in musteri_data:
-                if musteri[1] == musteri_adi:  # Unvan eşleşmesi
-                    subeler = musteri[8].split(",") if musteri[8] else []
-                    subeler = [s.strip() for s in subeler if s.strip()]
-                    fatura_kes_sube_combo['values'] = subeler
-                    if subeler:
-                        fatura_kes_sube_combo.set(subeler[0])
-                    break
-        except:
-            pass
-    
-    # Fatura seçimi event'ini bağla
-    fatura_kes_table.bind("<<TreeviewSelect>>", on_fatura_selection)
-    
-    # Tamamlanan faturaları yükle
-    def load_tamamlanan_faturalar():
-        fatura_kes_table.delete(*fatura_kes_table.get_children())
-        for fatura in tamamlanan_faturalar:
-            fatura_kes_table.insert("", "end", values=(
-                fatura["musteri"],
-                fatura["vergi_no"],
-                fatura["tutar"],
-                fatura["durum"],
-                fatura["tarih"],
-                fatura.get("fatura_turu", "MANUEL")
-            ))
-        apply_zebra_striping(fatura_kes_table)
-    
-    # Global fonksiyon olarak tanımla
-    global load_tamamlanan_faturalar_global
-    load_tamamlanan_faturalar_global = load_tamamlanan_faturalar
-    
-    # İlk yükleme
-    load_tamamlanan_faturalar()
-    
-    # --- Fatura Kes Butonları ---
-    frame_fatura_kes_butonlar = tk.Frame(frame_fatura_kes, bg="#d0d0d0")
-    frame_fatura_kes_butonlar.pack(pady=10)
-    
-    tk.Button(frame_fatura_kes_butonlar, text="Fatura Kes", bg="green", fg="white", width=15).pack(side="left", padx=5)
-    tk.Button(frame_fatura_kes_butonlar, text="Seçili Faturaları Kes", bg="blue", fg="white", width=20).pack(side="left", padx=5)
-    tk.Button(frame_fatura_kes_butonlar, text="Listeyi Yenile", bg="orange", fg="white", width=15, command=load_tamamlanan_faturalar_global).pack(side="left", padx=5)
-    # Taslak faturaları okuma fonksiyonu
-    def read_draft_invoices():
-        import threading
-        import datetime
-        from selenium import webdriver
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.chrome.service import Service
-        from webdriver_manager.chrome import ChromeDriverManager
-        from selenium.webdriver.chrome.options import Options
-        
-        def read_drafts():
-            try:
-                log_yaz("🔍 Taslak faturalar okunuyor...")
-                
-                # Chrome başlat
-                service = Service(ChromeDriverManager().install())
-                chrome_options = Options()
-                if headless_var is not None and headless_var.get():
-                    chrome_options.add_argument("--headless=new")
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-                
-                # Zirve portalına giriş
-                driver.get("https://yeniportal.zirvedonusum.com/accounting/login")
-                
-                # Giriş bilgileri
-                username = zirve_user.get().strip()
-                password = zirve_pass.get().strip()
-                
-                if not (username and password):
-                    log_yaz("❌ Zirve giriş bilgileri eksik!")
-                    return
-                
-                # Giriş yap
-                username_field = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.NAME, "username"))
-                )
-                password_field = driver.find_element(By.NAME, "password")
-                
-                username_field.send_keys(username)
-                password_field.send_keys(password)
-                
-                # Farklı giriş butonu seçenekleri dene
-                try:
-                    # Önce submit butonunu dene
-                    submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
-                    submit_btn.click()
-                except:
-                    try:
-                        # Input type submit dene
-                        submit_btn = driver.find_element(By.XPATH, "//input[@type='submit']")
-                        submit_btn.click()
-                    except:
-                        try:
-                            # Giriş butonu metni ile dene
-                            submit_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Giriş') or contains(text(), 'Login')]")
-                            submit_btn.click()
-                        except:
-                            # Enter tuşu ile dene
-                            from selenium.webdriver.common.keys import Keys
-                            password_field.send_keys(Keys.RETURN)
-                
-                # Giriş kontrolü - dashboard veya ana sayfa yüklenene kadar bekle
-                try:
-                    WebDriverWait(driver, 10).until(
-                        EC.any_of(
-                            EC.presence_of_element_located((By.CLASS_NAME, "dashboard")),
-                            EC.presence_of_element_located((By.CLASS_NAME, "main-content")),
-                            EC.presence_of_element_located((By.TAG_NAME, "nav")),
-                            EC.url_contains("dashboard"),
-                            EC.url_contains("main")
-                        )
-                    )
-                    log_yaz("✅ Zirve portalına giriş yapıldı")
-                except:
-                    log_yaz("⚠️ Giriş kontrolü yapılamadı, devam ediliyor...")
-                
-                # e-Dönüşüm menüsüne tıkla
-                try:
-                    edonusum_menu = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
-                    )
-                    edonusum_menu.click()
-                    log_yaz("✅ e-Dönüşüm menüsüne tıklandı")
-                except Exception as e:
-                    log_yaz(f"⚠️ e-Dönüşüm menüsü bulunamadı: {e}")
-                
-                # e-Fatura menüsüne tıkla
-                try:
-                    efatura_menu = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eInvoice']"))
-                    )
-                    efatura_menu.click()
-                    log_yaz("✅ e-Fatura menüsüne tıklandı")
-                except Exception as e:
-                    log_yaz(f"⚠️ e-Fatura menüsü bulunamadı: {e}")
-                
-                # Taslak Faturalar linkine tıkla
-                try:
-                    taslak_faturalar_link = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, "//li[@id='invoiceTmp']//a[@href='/accounting/invoiceTmp']"))
-                    )
-                    taslak_faturalar_link.click()
-                    log_yaz("✅ Taslak Faturalar linkine tıklandı")
-                except Exception as e:
-                    log_yaz(f"⚠️ Taslak Faturalar linki bulunamadı: {e}")
-                
-                # E-fatura taslakları oku
-                try:
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "table"))
-                    )
-                    
-                    # Tablo verilerini oku
-                    table = driver.find_element(By.TAG_NAME, "table")
-                    rows = table.find_elements(By.TAG_NAME, "tr")[1:]  # Başlık satırını atla
-                    
-                    for row in rows:
-                        cells = row.find_elements(By.TAG_NAME, "td")
-                        if len(cells) >= 8:  # Yeterli sütun var mı kontrol et
-                            try:
-                                # HTML yapısına göre veri çekme
-                                # 1. sütun: checkbox (atla)
-                                # 2. sütun: Fatura No/ETTN (atla)
-                                # 3. sütun: VKN/TCKN ve Unvan
-                                vkn_unvan_cell = cells[2]
-                                
-                                # VKN/TCKN ve Unvan'ı div elementlerinden çek
-                                # Ekran görüntüsüne göre: VKN/TCKN ve Unvan aynı sütunda alt alta
-                                vkn_unvan_text = vkn_unvan_cell.text.strip()
-                                
-                                # VKN/TCKN ve Unvan'ı ayır - <br> ile ayrılmış
-                                lines = vkn_unvan_text.split('\n')
-                                vergi_no = lines[0].strip() if lines else ""
-                                musteri = lines[1].strip() if len(lines) > 1 else ""
-                                
-                                # Debug için log ekle
-                                log_yaz(f"🔍 E-fatura VKN/Unvan metni: {vkn_unvan_text}")
-                                log_yaz(f"🔍 E-fatura Ayrılmış: VKN={vergi_no}, Unvan={musteri}")
-                                
-                                # Sütun sayısını kontrol et
-                                log_yaz(f"🔍 E-fatura Sütun sayısı: {len(cells)}")
-                                for i, cell in enumerate(cells):
-                                    log_yaz(f"🔍 E-fatura Sütun {i}: {cell.text.strip()[:50]}...")
-                                
-                                # 4. sütun: Fatura Tarihi
-                                tarih_cell = cells[3]
-                                tarih_div = tarih_cell.find_element(By.TAG_NAME, "div")
-                                tarih = tarih_div.text.strip().replace('\n', ' ')
-                                
-                                # 7. sütun: Ödenecek Tutar (son tutar)
-                                tutar_cell = cells[6]
-                                tutar_div = tutar_cell.find_element(By.TAG_NAME, "div")
-                                tutar = tutar_div.text.strip()
-                                
-                                durum = "Taslak"
-                                fatura_turu = "E-FATURA"
-                                
-                                # Sadece boş olmayan verileri ekle
-                                if musteri and vergi_no:
-                                    fatura_kes_table.insert("", "end", values=(
-                                        musteri, vergi_no, tutar, durum, tarih, fatura_turu
-                                    ))
-                                    log_yaz(f"✅ E-fatura okundu: {musteri} - {vergi_no} - {tutar}")
-                                    
-                            except Exception as e:
-                                log_yaz(f"⚠️ E-fatura satırı okunamadı: {e}")
-                                continue
-                    
-                    log_yaz(f"📋 {len(rows)} adet e-fatura taslağı okundu")
-                    
-                except Exception as e:
-                    log_yaz(f"⚠️ E-fatura taslakları okunamadı: {e}")
-                
-                # E-arşiv taslakları oku
-                try:
-                    # E-arşiv taslak linkine tıkla - farklı seçenekler dene
-                    try:
-                        e_arsiv_taslak_link = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, "//li[@id='archiveInvoiceTmp']//a[@href='/accounting/archiveInvoiceTmp']"))
-                        )
-                        e_arsiv_taslak_link.click()
-                        log_yaz("✅ E-Arşiv Taslak Faturalar linkine tıklandı")
-                    except:
-                        try:
-                            # Alternatif link dene
-                            e_arsiv_taslak_link = driver.find_element(By.XPATH, "//a[contains(@href, 'archiveInvoiceTmp')]")
-                            e_arsiv_taslak_link.click()
-                            log_yaz("✅ E-Arşiv Taslak Faturalar linkine tıklandı (alternatif)")
-                        except:
-                            # Direkt URL'ye git
-                            driver.get("https://yeniportal.zirvedonusum.com/accounting/archiveInvoiceTmp")
-                            log_yaz("✅ E-Arşiv Taslak Faturalar sayfasına gidildi")
-                    
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "table"))
-                    )
-                    
-                    # Tablo verilerini oku
-                    table = driver.find_element(By.TAG_NAME, "table")
-                    rows = table.find_elements(By.TAG_NAME, "tr")[1:]  # Başlık satırını atla
-                    
-                    for row in rows:
-                        cells = row.find_elements(By.TAG_NAME, "td")
-                        if len(cells) >= 8:  # Yeterli sütun var mı kontrol et
-                            try:
-                                # HTML yapısına göre veri çekme
-                                # 1. sütun: checkbox (atla)
-                                # 2. sütun: Fatura No/ETTN (atla)
-                                # 3. sütun: VKN/TCKN ve Unvan
-                                vkn_unvan_cell = cells[2]
-                                
-                                # VKN/TCKN ve Unvan'ı div elementlerinden çek
-                                # Ekran görüntüsüne göre: VKN/TCKN ve Unvan aynı sütunda alt alta
-                                vkn_unvan_text = vkn_unvan_cell.text.strip()
-                                
-                                # VKN/TCKN ve Unvan'ı ayır - <br> ile ayrılmış
-                                lines = vkn_unvan_text.split('\n')
-                                vergi_no = lines[0].strip() if lines else ""
-                                musteri = lines[1].strip() if len(lines) > 1 else ""
-                                
-                                # Debug için log ekle
-                                log_yaz(f"🔍 E-arşiv VKN/Unvan metni: {vkn_unvan_text}")
-                                log_yaz(f"🔍 E-arşiv Ayrılmış: VKN={vergi_no}, Unvan={musteri}")
-                                
-                                # 4. sütun: Fatura Tarihi
-                                tarih_cell = cells[3]
-                                tarih_div = tarih_cell.find_element(By.TAG_NAME, "div")
-                                tarih = tarih_div.text.strip().replace('\n', ' ')
-                                
-                                # 7. sütun: Ödenecek Tutar (son tutar)
-                                tutar_cell = cells[6]
-                                tutar_div = tutar_cell.find_element(By.TAG_NAME, "div")
-                                tutar = tutar_div.text.strip()
-                                
-                                durum = "E-Arşiv Taslak"
-                                fatura_turu = "E-ARŞİV"
-                                
-                                # Sadece boş olmayan verileri ekle
-                                if musteri and vergi_no:
-                                    fatura_kes_table.insert("", "end", values=(
-                                        musteri, vergi_no, tutar, durum, tarih, fatura_turu
-                                    ))
-                                    log_yaz(f"✅ E-arşiv okundu: {musteri} - {vergi_no} - {tutar}")
-                                    
-                            except Exception as e:
-                                log_yaz(f"⚠️ E-arşiv satırı okunamadı: {e}")
-                                continue
-                    
-                    log_yaz(f"📋 {len(rows)} adet e-arşiv taslağı okundu")
-                    
-                except Exception as e:
-                    log_yaz(f"⚠️ E-arşiv taslakları okunamadı: {e}")
-                
-                # Zebra görünümünü yenile
-                apply_zebra_striping(fatura_kes_table)
-                
-                driver.quit()
-                log_yaz("✅ Taslak faturalar okuma tamamlandı")
-                
-            except Exception as e:
-                log_yaz(f"❌ Taslak faturalar okunamadı: {e}")
-        
-        # Arka planda çalıştır
-        threading.Thread(target=read_drafts).start()
-    
-    tk.Button(frame_fatura_kes_butonlar, text="Taslak Faturaları Oku", bg="purple", fg="white", width=20, command=read_draft_invoices).pack(side="left", padx=5)
-
-    # ===================================================
-    # ==== SEKME 3: ÜRÜN KARTLARI ====
-    # ===================================================
-    frame_kartlar = tk.Frame(notebook, padx=10, pady=10, bg="#d0d0d0")
+    frame_kartlar = tk.Frame(notebook, padx=10, pady=10)
     notebook.add(frame_kartlar, text="Ürün Kartları")
 
     # --- Ürün Kart Tablosu ---
@@ -1387,9 +935,6 @@ def gui_main():
     kart_table.pack(fill="both", expand=True, pady=10)
     attach_context_delete(kart_table)
     load_kartlar(kart_table)
-    
-    # Zebra görünümü uygula
-    apply_zebra_striping(kart_table)
 
     # 👇 Ürün Ekleme Alanı'ndaki combobox'a ürünleri yükle
     urun_listesi = []
@@ -1420,7 +965,7 @@ def gui_main():
 
 
     # --- Ürün Kart Ekleme Alanı ---
-    frame_kart_add = tk.LabelFrame(frame_kartlar, text="Kart Ekleme Alanı", padx=10, pady=10, bg="#d0d0d0")
+    frame_kart_add = tk.LabelFrame(frame_kartlar, text="Kart Ekleme Alanı", padx=10, pady=10)
     frame_kart_add.pack(fill="x", pady=5)
 
     tk.Label(frame_kart_add, text="Ürün Türü:").grid(row=0, column=0, sticky="w")
@@ -1456,103 +1001,11 @@ def gui_main():
         )
 
     tk.Button(frame_kart_add, text="Kart Ekle", command=on_kart_add_button).grid(row=1, column=5, padx=10)
-    
-    # Düzenleme butonu
-    def duzenle_kart():
-        selected = kart_table.selection()
-        if not selected:
-            tk.messagebox.showwarning("Uyarı", "Lütfen düzenlemek için bir ürün kartı seçin!")
-            return
-        
-        values = kart_table.item(selected[0], "values")
-        if not values:
-            return
-        
-        # Yeni düzenleme penceresi oluştur
-        edit_win = tk.Toplevel(root)
-        edit_win.title("Ürün Kartı Düzenle")
-        edit_win.geometry("500x300")
-        edit_win.grab_set()  # Modal pencere yap
-        
-        # Pencere içeriği
-        frame_edit = tk.LabelFrame(edit_win, text="Ürün Kartı Düzenle", padx=10, pady=10)
-        frame_edit.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Form alanları
-        tk.Label(frame_edit, text="Ürün Türü:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        edit_tur_combo = ttk.Combobox(frame_edit, values=[
-            "YEDEK PARÇA",
-            "S.R/O SU ARITMA CİHAZI",
-            "SEBİL",
-            "R/O BETA SYSTEM - ENDÜSTRİYEL SU ARITMA CİHAZI"
-        ], width=27)
-        edit_tur_combo.grid(row=0, column=1, padx=5, pady=5)
-        edit_tur_combo.set(values[0])
-        
-        tk.Label(frame_edit, text="Ürün Adı:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        edit_ad_entry = tk.Entry(frame_edit, width=30)
-        edit_ad_entry.grid(row=1, column=1, padx=5, pady=5)
-        edit_ad_entry.insert(0, values[1])
-        
-        tk.Label(frame_edit, text="Birim:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        edit_birim_entry = tk.Entry(frame_edit, width=30)
-        edit_birim_entry.grid(row=2, column=1, padx=5, pady=5)
-        edit_birim_entry.insert(0, values[2])
-        
-        tk.Label(frame_edit, text="Fiyat:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
-        edit_fiyat_entry = tk.Entry(frame_edit, width=30)
-        edit_fiyat_entry.grid(row=3, column=1, padx=5, pady=5)
-        edit_fiyat_entry.insert(0, values[3])
-        
-        tk.Label(frame_edit, text="KDV %:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
-        edit_kdv_combo = ttk.Combobox(frame_edit, values=["0", "1", "8", "10", "18", "20"], width=27)
-        edit_kdv_combo.grid(row=4, column=1, padx=5, pady=5)
-        edit_kdv_combo.set(values[4])
-        
-        # Butonlar
-        btn_frame = tk.Frame(frame_edit, bg="#d0d0d0")
-        btn_frame.grid(row=5, column=0, columnspan=2, pady=20)
-        
-        def kaydet_degisiklikler():
-            # Yeni değerleri al
-            yeni_tur = edit_tur_combo.get().strip()
-            yeni_ad = edit_ad_entry.get().strip()
-            yeni_birim = edit_birim_entry.get().strip()
-            yeni_fiyat = edit_fiyat_entry.get().strip()
-            yeni_kdv = edit_kdv_combo.get().strip()
-            
-            if not (yeni_tur and yeni_ad):
-                tk.messagebox.showwarning("Uyarı", "Ürün türü ve adı zorunludur!")
-                return
-            
-            # Seçili ürünü güncelle
-            kart_table.item(selected[0], values=(yeni_tur, yeni_ad, yeni_birim, yeni_fiyat, yeni_kdv))
-            
-            # Dosyaya kaydet
-            save_kartlar(kart_table)
-            
-            # Ürün listesini güncelle
-            urun_listesi = []
-            for child in kart_table.get_children():
-                tur, ad, b, f, k = kart_table.item(child, "values")
-                urun_listesi.append(f"{tur} ({ad})")
-            urun_combo['values'] = urun_listesi
-            
-            tk.messagebox.showinfo("Başarılı", "Ürün kartı başarıyla güncellendi!")
-            edit_win.destroy()
-        
-        def iptal_et():
-            edit_win.destroy()
-        
-        tk.Button(btn_frame, text="Kaydet", command=kaydet_degisiklikler, bg="green", fg="white").pack(side="left", padx=5)
-        tk.Button(btn_frame, text="İptal", command=iptal_et, bg="red", fg="white").pack(side="left", padx=5)
-    
-    tk.Button(frame_kart_add, text="Düzenle", command=duzenle_kart, bg="orange", fg="white").grid(row=1, column=6, padx=10)
     # --- Ürün Kart Ekleme Alanı Sonu ---
 
     # ===================================================
     # --- Müşteriler Sekmesi ---
-    frame_musteriler = tk.Frame(notebook, padx=10, pady=10, bg="#d0d0d0")
+    frame_musteriler = tk.Frame(notebook, padx=10, pady=10)
     notebook.add(frame_musteriler, text="Müşteriler")
 
     # Arama kutusu
@@ -1574,9 +1027,6 @@ def gui_main():
     musteri_table.pack(fill="both", expand=True, pady=10)
     attach_context_delete(musteri_table)
     load_musteriler(musteri_table)
-    
-    # Zebra görünümü uygula
-    apply_zebra_striping(musteri_table)
 
     # --- Müşteri Tablosu Arama ---
     def filter_musteriler(*args):
@@ -1678,7 +1128,7 @@ def gui_main():
             save_musteriler(musteri_table)
 
     # Düzenle ve Sil butonları
-    btn_frame = tk.Frame(frame_musteriler, bg="#d0d0d0")
+    btn_frame = tk.Frame(frame_musteriler)
     btn_frame.pack(pady=5)
 
     tk.Button(btn_frame, text="Düzenle", command=duzenle_musteri).pack(side="left", padx=5)
@@ -1686,11 +1136,11 @@ def gui_main():
     # --- Müşteriler Sekmesi Sonu ---
 
     # ================== START ZİRVE BİLGİLERİ & LOG ==================
-    frame_zirve_log = tk.Frame(notebook, padx=10, pady=10, bg="#d0d0d0")
+    frame_zirve_log = tk.Frame(notebook, padx=10, pady=10)
     notebook.add(frame_zirve_log, text="Zirve Bilgileri & Log")
 
     # --- Zirve giriş bilgileri ---
-    frame_zirve = tk.LabelFrame(frame_zirve_log, text="Zirve Giriş", padx=10, pady=10, bg="#d0d0d0")
+    frame_zirve = tk.LabelFrame(frame_zirve_log, text="Zirve Giriş", padx=10, pady=10)
     frame_zirve.pack(fill="x", pady=10)
 
     tk.Label(frame_zirve, text="Şirket:").grid(row=0, column=0, sticky="e")
@@ -1773,8 +1223,7 @@ def gui_main():
 
     # Headless mod (Sil butonunun yanında)
     headless_var = tk.BooleanVar(value=False)
-    headless_checkbox = tk.Checkbutton(frame_zirve, text="Headless", variable=headless_var, bg="#d0d0d0")
-    headless_checkbox.grid(row=0, column=8, padx=5, pady=5)
+    tk.Checkbutton(frame_zirve, text="Headless", variable=headless_var).grid(row=0, column=8, padx=5, pady=5)
 
     # --- Program açıldığında kayıtlı bilgileri yükle ---
     bilgiler = {}
@@ -1807,7 +1256,7 @@ def gui_main():
         zirve_sirket_combo["values"] = ["Şirket A", "Şirket B"]
 
     # --- Log ekranı ---
-    frame_log = tk.LabelFrame(frame_zirve_log, text="İşlem Logu", padx=10, pady=10, bg="#d0d0d0")
+    frame_log = tk.LabelFrame(frame_zirve_log, text="İşlem Logu", padx=10, pady=10)
     frame_log.pack(fill="both", expand=True, pady=10)
 
     log_text = tk.Text(frame_log, state="disabled", height=15)
@@ -1823,7 +1272,6 @@ def gui_main():
 # ================== START MAIN SCRIPT ==================
 driver_global = None  # 👈 Chrome'u global tanımladık
 fatura_queue = []     # 👈 Fatura kuyruğu burada tanımlı
-tamamlanan_faturalar = []  # 👈 Tamamlanan faturalar listesi
 is_processing = False # 👈 Şu an işlem var mı?
 headless_var = None   # 👈 Headless seçeneği (GUI içinde ayarlanır)
 
@@ -1914,35 +1362,16 @@ def process_queue():
 
             save_and_close_invoice(driver)
             log_yaz("💾 Fatura taslak olarak kaydedildi.")
-            
-            # Tamamlanan faturayı listeye ekle
-            import datetime
-            tamamlanan_faturalar.append({
-                "musteri": bilgiler.get("unvan", ""),
-                "vergi_no": bilgiler.get("vergi_no", ""),
-                "tutar": "0",  # Şimdilik 0, sonra hesaplanacak
-                "durum": "Taslak",
-                "tarih": datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
-            })
-            log_yaz(f"📋 Fatura tamamlandı: {bilgiler.get('unvan', '')}")
 
         except Exception as e:
             log_yaz(f"❌ Hata: {e}")
             log_yaz(traceback.format_exc())
 
         refresh_queue_view()  # 👈 Her faturadan sonra tabloyu güncelle
-        
-        # Fatura Kes sekmesini de güncelle
-        try:
-            if 'load_tamamlanan_faturalar_global' in globals():
-                load_tamamlanan_faturalar_global()
-        except:
-            pass
 
     is_processing = False
     log_yaz("✅ Kuyruk tamamlandı, tüm faturalar işlendi.")
     refresh_queue_view()
-    
 # ================== END MAIN SCRIPT ==================
 
 

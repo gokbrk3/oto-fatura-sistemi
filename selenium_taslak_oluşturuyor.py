@@ -7,29 +7,15 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-import time
-
-
+from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 # ==== Ayarlar ====
 PORTAL_URL = "https://yeniportal.zirvedonusum.com/accounting/login"
 EXCEL_PATH = Path(r"c:/projeler/oto fatura/test_fatura_zirve.xlsx")
 # ================== END CONFIG ==================
 
-
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-
-
 print("✅ Doğru zirve_selenium.py dosyası çalışıyor")
-
-
-
-
-
 
 # ================== START EXCEL ==================
 def read_excel_data(sirket, baslik):
@@ -38,14 +24,14 @@ def read_excel_data(sirket, baslik):
     if df.empty:
         raise ValueError(f"Excel'de {sirket} için {baslik} bulunamadı!")
     return {
-        "vergi_no": str(df.iloc[0]["Vergi No / TC"]),   # Excel'deki sütun adı
+        "vergi_no": str(df.iloc[0]["Vergi No / TC"]),
         "unvan": baslik,
-        "vergi_sehir": df.iloc[0]["Vergi D. Şehri"],    # Excel'deki sütun adı
-        "vergi_dairesi": df.iloc[0]["Vergi D."],        # Excel'deki sütun adı
-        "adres": df.iloc[0]["Adres"],                   # Excel'deki sütun adı
-        "adres_sehir": df.iloc[0]["Adres Şehir"],       # yeni sütun
-        "adres_ilce": df.iloc[0]["Adres İlçe"],         # yeni sütun
-        "urun_adi": df.iloc[0]["Ürün Adı"],             # ürün ekleme için
+        "vergi_sehir": df.iloc[0]["Vergi D. Şehri"],
+        "vergi_dairesi": df.iloc[0]["Vergi D."],
+        "adres": df.iloc[0]["Adres"],
+        "adres_sehir": df.iloc[0]["Adres Şehir"],
+        "adres_ilce": df.iloc[0]["Adres İlçe"],
+        "urun_adi": df.iloc[0]["Ürün Adı"],
         "miktar": df.iloc[0]["Miktar"],
         "birim": df.iloc[0]["Birim"],
         "birim_fiyat": df.iloc[0]["Birim Fiyat"],
@@ -55,15 +41,7 @@ def read_excel_data(sirket, baslik):
     }
 # ================== END EXCEL ==================
 
-
-
-
 # ================== START LOGIN ==================
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-
 def login_portal(driver, username, password):
     """
     Zirve portalına giriş yapar.
@@ -109,7 +87,7 @@ def login_portal(driver, username, password):
         login_btn.click()
         print("✅ Giriş butonuna tıklandı.")
 
-        # 🔑 Giriş sonrası e-Dönüşüm menüsünün yüklenmesini bekle
+        # Giriş sonrası e-Dönüşüm menüsünün yüklenmesini bekle
         WebDriverWait(driver, 20).until(
             EC.element_to_be_clickable((By.XPATH, "//a[@href='#pagesTransformation']"))
         )
@@ -121,20 +99,12 @@ def login_portal(driver, username, password):
         print(f"❌ Giriş elementi bulunamadı: {e}")
 # ================== END LOGIN ==================
 
-
-
-
-
 # ================== START CREATE INVOICE SIMPLE ==================
 def create_invoice_simple(driver, bilgiler):
     """
     Zirve portalında fatura oluşturma sayfasına gider
     ve Excel'den gelen müşteri bilgilerine göre vergi no ile sorgulama yapar.
-    Parametre:
-        driver: Selenium driver
-        bilgiler: GUI'nin hazırladığı Excel'den gelen dict
     """
-
     # Menü → e-Dönüşüm aç
     menu_edonusum = WebDriverWait(driver, 20).until(
         EC.element_to_be_clickable((By.XPATH, "//a[@href='#pagesTransformation']"))
@@ -157,8 +127,7 @@ def create_invoice_simple(driver, bilgiler):
         EC.presence_of_element_located((By.XPATH, "//div[@class='Select-input']/input"))
     )
 
-    from selenium.webdriver.common.keys import Keys
-    search_box.send_keys(bilgiler["vergi_no"])  # ✅ GUI Excel'den gelen dict
+    search_box.send_keys(bilgiler["vergi_no"])
 
     # "Sorgulanıyor" yazısını bekle → sonra kaybolmasını bekle
     try:
@@ -184,26 +153,22 @@ def create_invoice_simple(driver, bilgiler):
             EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Tamam')]"))
         )
         btn_tamam.click()
-        print("✅ Onay popup → Tamam’a basıldı.")
+        print("✅ Onay popup → Tamam'a basıldı.")
     except:
         print("⚠️ Onay penceresi çıkmadı, müşteri yeni olabilir.")
 # ================== END CREATE INVOICE SIMPLE ==================
-
 
 # ================== START PRODUCT UPLOAD ==================
 def upload_products_from_excel(driver, excel_path):
     """
     Zirve portalında ürünleri Excel'den yükler.
-    Parametre:
-        driver: Selenium driver
-        excel_path: Yüklenecek Excel dosyasının tam yolu (Path veya str)
     """
     # Gizli dosya input'unu bul
     file_input = WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.XPATH, "//input[@type='file' and contains(@accept, '.xls')]"))
     )
 
-    # JS ile input'u görünür hale getirelim (opsiyonel, send_keys gizliye de çalışır ama garanti olsun)
+    # JS ile input'u görünür hale getirelim
     driver.execute_script("arguments[0].style.display = 'block'; arguments[0].style.visibility = 'visible';", file_input)
 
     # Dosyayı gönder
@@ -217,14 +182,8 @@ def upload_products_from_excel(driver, excel_path):
     print("✅ Ürünler Excel'den yüklendi (native pencere açılmadan).")
 # ================== END PRODUCT UPLOAD ==================
 
-
-
-
-
 # ================== START ALICI DUZENLE ==================
 def alici_duzenle(driver, bilgiler):
-    from selenium.webdriver.common.keys import Keys
-
     def clear_input_hard(el):
         # Görünecek şekilde kaydır + odakla
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
@@ -266,7 +225,7 @@ def alici_duzenle(driver, bilgiler):
         EC.presence_of_element_located((By.ID, "tFormattedName"))
     )
     clear_input_hard(unvan_input)
-    unvan_input.send_keys(bilgiler["unvan"])  # Portal validasyonları için önce yazıyoruz
+    unvan_input.send_keys(bilgiler["unvan"])
 
     # Vergi D. Şehir
     sehir_input = WebDriverWait(driver, 20).until(
@@ -322,7 +281,7 @@ def alici_duzenle(driver, bilgiler):
     driver.execute_script("arguments[0].click();", btn_kaydet)
     print("✅ Kaydet butonuna basıldı, kontrol ediliyor...")
 
-    # --- ALERT KONTROL ---
+    # ALERT KONTROL
     try:
         alert_box = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.CLASS_NAME, "s-alert-box"))
@@ -355,7 +314,7 @@ def alici_duzenle(driver, bilgiler):
             ad_input.clear(); ad_input.send_keys(ad)
             soyad_input.clear(); soyad_input.send_keys(soyad)
 
-            # **UNVAN'I KESİN SİL** (React uyumlu sert temizlik)
+            # UNVAN'I KESİN SİL (React uyumlu sert temizlik)
             clear_input_hard(unvan_input)
 
             # Kaydet tekrar
@@ -363,7 +322,7 @@ def alici_duzenle(driver, bilgiler):
                 EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'modal-footer')]//button[contains(@class,'kaydet')]"))
             )
             driver.execute_script("arguments[0].click();", btn_kaydet)
-            print(f"✅ Ad = '{ad}', Soyad = '{soyad}' yazıldı. Ünvan silindi, tekrar Kaydet’e basıldı.")
+            print(f"✅ Ad = '{ad}', Soyad = '{soyad}' yazıldı. Ünvan silindi, tekrar Kaydet'e basıldı.")
 
             # İsteğe bağlı: Silindi mi kontrol et (modal kapanmadıysa)
             try:
@@ -375,11 +334,6 @@ def alici_duzenle(driver, bilgiler):
     except Exception:
         print("✅ Kaydet başarılı, alert çıkmadı.")
 # ================== END ALICI DUZENLE ==================
-
-
-
-
-
 
 # ================== START CHECK CUSTOMER ==================
 def check_customer_and_edit(driver, bilgiler):
@@ -398,12 +352,48 @@ def check_customer_and_edit(driver, bilgiler):
         print("✅ Vergi Dairesi dolu → müşteri bulundu, Alıcı Düzenle gerek yok.")
 # ================== END CHECK CUSTOMER ==================
 
+# ================== START INVOICE NOTE ==================
+def add_invoice_note(driver, aciklama_text):
+    """
+    Zirve portalında fatura açıklamasını ekler.
+    """
+    try:
+        aciklama_box = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, "note_0"))
+        )
+        aciklama_box.clear()
+        aciklama_box.send_keys(aciklama_text)
+        print(f"📝 Açıklama eklendi: {aciklama_text}")
+    except Exception as e:
+        print(f"❌ Açıklama eklenemedi: {e}")
+# ================== END INVOICE NOTE ==================
 
+# ================== START FINAL SAVE ==================
+def save_and_close_invoice(driver):
+    """
+    Zirve portalında fatura için Kaydet & Kapat işlemini yapar
+    ve işlem bittiğinde tarayıcıyı kapatır.
+    """
+    try:
+        btn_kaydet = WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//button[contains(@class,'terminate') and @title='Kaydet & Kapat']"
+            ))
+        )
+        driver.execute_script("arguments[0].click();", btn_kaydet)
+        print("✅ Kaydet & Kapat butonuna basıldı, fatura taslağa kaydedildi.")
 
+        # Kaydettikten sonra tarayıcıyı kapat
+        time.sleep(2)  # işlem tamamlansın diye küçük bekleme
+        driver.quit()
+        print("✅ Tarayıcı kapatıldı, yeni fatura için tekrar açılacak.")
 
+    except Exception as e:
+        print(f"❌ Kaydet & Kapat işlemi başarısız: {e}")
+# ================== END FINAL SAVE ==================
 
 # ================== START MAIN SCRIPT ==================
-# ==== Main ====
 if __name__ == "__main__":
     sirket = "Şirket1"
     baslik = "Ahmet Yılmaz"
@@ -412,7 +402,7 @@ if __name__ == "__main__":
 
     TEST_EXCEL_PATH = Path(r"c:/projeler/oto fatura/test_fatura_zirve.xlsx")
 
-    service = Service(executable_path="chromedriver.exe")  # chromedriver yolunu ayarla
+    service = Service(executable_path="chromedriver.exe")
     driver = webdriver.Chrome(service=service)
     driver.maximize_window()
 
@@ -455,47 +445,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Hata: {e}")
 # ================== END MAIN SCRIPT ==================
-
-
-# ================== START INVOICE NOTE ==================
-def add_invoice_note(driver, aciklama_text):
-    """
-    Zirve portalında fatura açıklamasını ekler.
-    """
-    try:
-        aciklama_box = WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.ID, "note_0"))
-        )
-        aciklama_box.clear()
-        aciklama_box.send_keys(aciklama_text)
-        print(f"📝 Açıklama eklendi: {aciklama_text}")
-    except Exception as e:
-        print(f"❌ Açıklama eklenemedi: {e}")
-# ================== END INVOICE NOTE ==================
-
-
-# ================== START FINAL SAVE ==================
-def save_and_close_invoice(driver):
-    """
-    Zirve portalında fatura için Kaydet & Kapat işlemini yapar
-    ve işlem bittiğinde tarayıcıyı kapatır.
-    """
-    try:
-        btn_kaydet = WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((
-                By.XPATH,
-                "//button[contains(@class,'terminate') and @title='Kaydet & Kapat']"
-            ))
-        )
-        driver.execute_script("arguments[0].click();", btn_kaydet)
-        print("✅ Kaydet & Kapat butonuna basıldı, fatura taslağa kaydedildi.")
-
-        # 🔑 Kaydettikten sonra tarayıcıyı kapat
-        time.sleep(2)  # işlem tamamlansın diye küçük bekleme
-        driver.quit()
-        print("✅ Tarayıcı kapatıldı, yeni fatura için tekrar açılacak.")
-
-    except Exception as e:
-        print(f"❌ Kaydet & Kapat işlemi başarısız: {e}")
-# ================== END FINAL SAVE ==================
-
