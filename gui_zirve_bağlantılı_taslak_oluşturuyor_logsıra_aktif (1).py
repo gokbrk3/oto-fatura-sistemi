@@ -1953,6 +1953,7 @@ def process_queue():
 
 
 print("✅ GUI dosyası çalışıyor")
+print("🔄 GitHub güncelleme kontrolü - 2025-09-20 17:10:00")
 
 gui_main()
 tk.mainloop()
