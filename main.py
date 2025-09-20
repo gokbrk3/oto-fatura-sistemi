@@ -18,6 +18,7 @@ def main():
     print(f"Çalışma dizini: {os.getcwd()}")
     print("=" * 50)
     print("Proje başlatıldı!")
+    print("🔄 GitHub güncelleme kontrolü - 2025-09-20 17:15:00")
 
 if __name__ == "__main__":
     main()

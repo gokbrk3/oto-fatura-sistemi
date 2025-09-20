@@ -16,7 +16,7 @@ EXCEL_PATH = Path(r"c:/projeler/oto fatura/test_fatura_zirve.xlsx")
 # ================== END CONFIG ==================
 
 print("✅ Doğru zirve_selenium.py dosyası çalışıyor")
-print("🔄 GitHub güncelleme kontrolü - 2025-09-20 17:10:00")
+print("🔄 GitHub güncelleme kontrolü - 2025-09-20 17:15:00")
 
 # ================== START EXCEL ==================
 def read_excel_data(sirket, baslik):

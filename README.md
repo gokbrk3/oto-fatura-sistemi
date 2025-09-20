@@ -1,5 +1,5 @@
-<<<<<<< HEAD
-# Python Proje Şablonu
+# Oto Fatura Sistemi
+<!-- GitHub güncelleme kontrolü - 2025-09-20 17:15:00 -->
 
 Bu repository, Python projeleri için standart şablon içerir.
 
