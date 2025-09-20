@@ -1,0 +1,33 @@
+{
+    "emmet.showSuggestionsAsSnippets": true,
+    "editor.acceptSuggestionOnEnter": "on",
+    "editor.acceptSuggestionOnCommitCharacter": true,
+    "editor.acceptSuggestionOnType": true,
+    "editor.quickSuggestions": {
+        "other": true,
+        "comments": false,
+        "strings": true
+    },
+    "editor.suggestOnTriggerCharacters": true,
+    "editor.wordBasedSuggestions": "matchingDocuments",
+    "editor.suggest.showSnippets": true,
+    "editor.suggest.showWords": true,
+    "editor.suggest.showKeywords": true,
+    "editor.intelliSense.enable": true,
+    "editor.suggest.insertMode": "replace",
+    "editor.tabCompletion": "on",
+    "editor.suggest.insertMode": "replace",
+    "editor.parameterHints.enabled": true,
+    "editor.hover.enabled": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+    },
+    "cursor.cpp.disabledLanguages": [],
+    "cursor.general.enableAutoAccept": true,
+    "cursor.chat.autoAcceptSuggestions": true,
+    "cursor.ai.autoAccept": true,
+    "cursor.suggestions.autoAccept": true
+    "cursor.confirmRun": false,
+    "cursor.confirmEdit": false,
+
+}
