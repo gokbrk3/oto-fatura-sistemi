@@ -4,11 +4,15 @@ import os
 import json
 import threading
 import traceback
+import time
 from openpyxl import load_workbook
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # Selenium fonksiyonlarını import et
 from selenium_taslak_oluşturuyor import (
@@ -27,6 +31,8 @@ is_processing = False
 headless_var = None
 log_text = None
 queue_table = None
+fatura_indirme_aktif = False  # Fatura indirme durumu kontrolü
+fatura_indirme_kuyrugu = []  # Fatura indirme kuyruğu
 
 
 
@@ -35,6 +41,28 @@ queue_table = None
 
 
 # ================== START HELPERS ==================
+
+def vkn_ile_musteri_ismi_bul(vkn):
+    """
+    VKN'ye göre musteriler.json'dan müşteri unvanını bulur.
+    Bulunamazsa None döner.
+    """
+    try:
+        with open("musteriler.json", "r", encoding="utf-8") as f:
+            musteri_data = json.load(f)
+        
+        for musteri in musteri_data:
+            if len(musteri) >= 4 and musteri[0] == vkn:
+                # Unvan 4. sütunda (index 3)
+                unvan = musteri[3].strip()
+                if unvan:  # Unvan boş değilse
+                    return unvan
+        
+        return None  # VKN bulunamadı veya unvan boş
+    except Exception as e:
+        log_yaz(f"⚠️ Müşteri verisi okunamadı: {e}")
+        return None
+
 class AutocompleteCombobox(tk.Frame):
     def __init__(self, master, values=None, width=20, next_widget=None,
                  linked_fields=None, kart_table=None, **kwargs):
@@ -509,6 +537,7 @@ def gui_main():
     global zirve_sirket_combo, zirve_user, zirve_pass
     global log_text   # 👈 Buraya ekledik
     global headless_var
+    global fatura_kes_sube_combo, fatura_kes_personel_entry, fatura_kes_islem_turu_combo  # Fatura Kes sekmesi kaldırıldı, değişkenler korundu
 
 
 
@@ -985,7 +1014,7 @@ def gui_main():
     btn_fatura_olustur = tk.Button(
         btn_frame_fatura,
         text="Fatura Taslak Oluştur",
-        command=fatura_kes_action,  # artık fonksiyon hazır
+        command=lambda: log_yaz("⚠️ Fatura Kes özelliği kaldırıldı"),  # Fatura Kes özelliği kaldırıldı
         bg="green",
         fg="white"
     )
@@ -995,13 +1024,7 @@ def gui_main():
 
 
     # ===================================================
-    # ==== SEKME 2: FATURA KES ====
-    # ===================================================
-    frame_fatura_kes = tk.Frame(notebook, padx=10, pady=10, bg="#d0d0d0")
-    notebook.add(frame_fatura_kes, text="Fatura Kes")
-    
-    # ===================================================
-    # ==== SEKME 3: FATURA İNDİR ====
+    # ==== SEKME 2: FATURA İNDİR ====
     # ===================================================
     frame_fatura_indir = tk.Frame(notebook, padx=10, pady=10, bg="#d0d0d0")
     notebook.add(frame_fatura_indir, text="Fatura İndir")
@@ -1021,9 +1044,9 @@ def gui_main():
     fatura_kes_personel_entry.grid(row=0, column=3, padx=5, pady=5)
     
     tk.Label(frame_fatura_secim, text="İşlem Türü:").grid(row=0, column=4, sticky="w", padx=5, pady=5)
-    fatura_kes_islem_combo = ttk.Combobox(frame_fatura_secim, values=["SRV", "STŞ", "YEDEK PARÇA"], width=12)
-    fatura_kes_islem_combo.set("SRV")
-    fatura_kes_islem_combo.grid(row=0, column=5, padx=5, pady=5)
+    fatura_kes_islem_turu_combo = ttk.Combobox(frame_fatura_secim, values=["SRV", "STŞ", "YEDEK PARÇA"], width=12)
+    fatura_kes_islem_turu_combo.set("SRV")
+    fatura_kes_islem_turu_combo.grid(row=0, column=5, padx=5, pady=5)
     
     # Fatura İndir butonu
     btn_fatura_indir = tk.Button(frame_fatura_secim, text="Fatura İndir", command=lambda: indir_secilen_faturalar(), 
@@ -1031,11 +1054,11 @@ def gui_main():
                                 relief="raised", bd=2, padx=15, pady=5)
     btn_fatura_indir.grid(row=0, column=6, padx=10, pady=5)
     
-    # --- Faturaları Oku Butonu ---
+    # --- Faturaları Oku Butonu (En altta, küçük) ---
     btn_faturalari_oku = tk.Button(frame_fatura_indir, text="Faturaları Oku", command=lambda: read_invoices_from_zirve(), 
-                                  bg="#4CAF50", fg="white", font=("Arial", 12, "bold"), 
-                                  relief="raised", bd=3, padx=20, pady=10)
-    btn_faturalari_oku.pack(pady=20)
+                                  bg="#4CAF50", fg="white", font=("Arial", 9, "normal"), 
+                                  relief="raised", bd=2, padx=10, pady=5)
+    btn_faturalari_oku.pack(side="bottom", pady=5)
     
     # --- E-Fatura Tablosu ---
     frame_efatura = tk.LabelFrame(frame_fatura_indir, text="E-Fatura Listesi", padx=10, pady=10, bg="#d0d0d0")
@@ -1076,414 +1099,6 @@ def gui_main():
     
     # E-Arşiv tablosu seçim event'i
     earsiv_table.bind("<<TreeviewSelect>>", lambda e: guncelle_subeler())
-    
-    # --- Fatura Listesi ---
-    frame_fatura_listesi = tk.LabelFrame(frame_fatura_kes, text="Fatura Listesi", padx=10, pady=10, bg="#d0d0d0")
-    frame_fatura_listesi.pack(fill="both", expand=True, pady=10)
-    
-    # Fatura listesi tablosu
-    fatura_kes_columns = ("Müşteri", "Vergi No", "Tutar", "Durum", "Tarih", "Fatura Türü")
-    fatura_kes_table = ttk.Treeview(frame_fatura_listesi, columns=fatura_kes_columns, show="headings", height=12)
-    
-    for col in fatura_kes_columns:
-        fatura_kes_table.heading(col, text=col)
-        fatura_kes_table.column(col, width=120, anchor="center")
-    
-    fatura_kes_table.pack(fill="both", expand=True, pady=10)
-    attach_context_delete(fatura_kes_table)
-    
-    # Zebra görünümü uygula
-    apply_zebra_striping(fatura_kes_table)
-    
-    # Fatura seçildiğinde şube bilgilerini yükle
-    def on_fatura_selection(event):
-        selected = fatura_kes_table.selection()
-        if not selected:
-            return
-        
-        # Seçili faturayı al
-        values = fatura_kes_table.item(selected[0], "values")
-        if not values:
-            return
-        
-        musteri_adi = values[0]  # Müşteri adı
-        
-        # Müşteri bilgilerini bul ve şubeleri al
-        try:
-            with open("musteriler.json", "r", encoding="utf-8") as f:
-                musteri_data = json.load(f)
-            
-            for musteri in musteri_data:
-                if musteri[1] == musteri_adi:  # Unvan eşleşmesi
-                    subeler = musteri[8].split(",") if musteri[8] else []
-                    subeler = [s.strip() for s in subeler if s.strip()]
-                    fatura_kes_sube_combo['values'] = subeler
-                    if subeler:
-                        fatura_kes_sube_combo.set(subeler[0])
-                    break
-        except:
-            pass
-    
-    # Fatura seçimi event'ini bağla
-    fatura_kes_table.bind("<<TreeviewSelect>>", on_fatura_selection)
-    
-    # Tamamlanan faturaları yükle
-    def load_tamamlanan_faturalar():
-        fatura_kes_table.delete(*fatura_kes_table.get_children())
-        for fatura in tamamlanan_faturalar:
-            fatura_kes_table.insert("", "end", values=(
-                fatura["musteri"],
-                fatura["vergi_no"],
-                fatura["tutar"],
-                fatura["durum"],
-                fatura["tarih"],
-                fatura.get("fatura_turu", "MANUEL")
-            ))
-        apply_zebra_striping(fatura_kes_table)
-    
-    # Global fonksiyon olarak tanımla
-    global load_tamamlanan_faturalar_global
-    load_tamamlanan_faturalar_global = load_tamamlanan_faturalar
-    
-    # İlk yükleme
-    load_tamamlanan_faturalar()
-    
-    # --- Fatura Kes Butonları ---
-    frame_fatura_kes_butonlar = tk.Frame(frame_fatura_kes, bg="#d0d0d0")
-    frame_fatura_kes_butonlar.pack(pady=10)
-    
-    tk.Button(frame_fatura_kes_butonlar, text="Fatura Kes", bg="green", fg="white", width=15).pack(side="left", padx=5)
-    tk.Button(frame_fatura_kes_butonlar, text="Seçili Faturaları Kes", bg="blue", fg="white", width=20).pack(side="left", padx=5)
-    tk.Button(frame_fatura_kes_butonlar, text="Listeyi Yenile", bg="orange", fg="white", width=15, command=load_tamamlanan_faturalar_global).pack(side="left", padx=5)
-    # Taslak faturaları okuma fonksiyonu
-    def read_draft_invoices():
-        import threading
-        import datetime
-        from selenium import webdriver
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.chrome.service import Service
-        from webdriver_manager.chrome import ChromeDriverManager
-        from selenium.webdriver.chrome.options import Options
-        
-        def read_drafts():
-            try:
-                log_yaz("🔍 Taslak faturalar okunuyor...")
-                
-                # Chrome başlat - Normal tam ekran açılması için
-                service = Service(ChromeDriverManager().install())
-                chrome_options = Options()
-                if headless_var is not None and headless_var.get():
-                    # Headless mod için ek seçenekler
-                    chrome_options.add_argument("--headless=new")
-                    chrome_options.add_argument("--window-size=1920,1080")
-                    chrome_options.add_argument("--disable-gpu")
-                    chrome_options.add_argument("--disable-dev-shm-usage")
-                    chrome_options.add_argument("--disable-extensions")
-                    chrome_options.add_argument("--no-sandbox")
-                    chrome_options.add_argument("--disable-web-security")
-                    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-                    chrome_options.add_argument("--remote-debugging-port=9222")
-                else:
-                    # Normal tam ekran açılması için
-                    chrome_options.add_argument("--start-maximized")
-                    chrome_options.add_argument("--disable-web-security")
-                    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-                    chrome_options.add_argument("--disable-extensions")
-                    chrome_options.add_argument("--no-sandbox")
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-                # Normal tam ekran için maximize_window ekle
-                if not (headless_var is not None and headless_var.get()):
-                    driver.maximize_window()
-                
-                # Zirve portalına giriş
-                driver.get("https://yeniportal.zirvedonusum.com/accounting/login")
-                
-                # Giriş bilgileri
-                username = zirve_user.get().strip()
-                password = zirve_pass.get().strip()
-                
-                if not (username and password):
-                    log_yaz("❌ Zirve giriş bilgileri eksik!")
-                    return
-                
-                # Giriş yap
-                username_field = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.NAME, "username"))
-                )
-                password_field = driver.find_element(By.NAME, "password")
-                
-                username_field.send_keys(username)
-                password_field.send_keys(password)
-                
-                # Farklı giriş butonu seçenekleri dene
-                try:
-                    # Önce submit butonunu dene
-                    submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
-                    submit_btn.click()
-                except:
-                    try:
-                        # Input type submit dene
-                        submit_btn = driver.find_element(By.XPATH, "//input[@type='submit']")
-                        submit_btn.click()
-                    except:
-                        try:
-                            # Giriş butonu metni ile dene
-                            submit_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Giriş') or contains(text(), 'Login')]")
-                            submit_btn.click()
-                        except:
-                            # Enter tuşu ile dene
-                            from selenium.webdriver.common.keys import Keys
-                            password_field.send_keys(Keys.RETURN)
-                
-                # Giriş kontrolü - e-Dönüşüm menüsünün yüklenmesini bekle (Headless modda daha uzun bekle)
-                wait_time = 30 if (headless_var is not None and headless_var.get()) else 20
-                try:
-                    WebDriverWait(driver, wait_time).until(
-                        EC.element_to_be_clickable((By.XPATH, "//a[@href='#pagesTransformation']"))
-                    )
-                    log_yaz("✅ Portal giriş başarılı, e-Dönüşüm menüsü hazır!")
-                except:
-                    log_yaz("⚠️ Giriş kontrolü yapılamadı, devam ediliyor...")
-                
-                # e-Dönüşüm menüsüne tıkla (zaten giriş kontrolünde tıklanabilir hale geldi)
-                try:
-                    edonusum_menu = driver.find_element(By.XPATH, "//a[@href='#pagesTransformation']")
-                    edonusum_menu.click()
-                    log_yaz("✅ e-Dönüşüm menüsüne tıklandı")
-                except Exception as e:
-                    log_yaz(f"⚠️ e-Dönüşüm menüsü bulunamadı: {e}")
-                
-                # e-Fatura menüsüne tıkla
-                try:
-                    efatura_menu = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eInvoice']"))
-                    )
-                    efatura_menu.click()
-                    log_yaz("✅ e-Fatura menüsüne tıklandı")
-                except Exception as e:
-                    log_yaz(f"⚠️ e-Fatura menüsü bulunamadı: {e}")
-                
-                # Taslak Faturalar linkine tıkla
-                try:
-                    taslak_faturalar_link = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, "//li[@id='invoiceTmp']//a[@href='/accounting/invoiceTmp']"))
-                    )
-                    taslak_faturalar_link.click()
-                    log_yaz("✅ Taslak Faturalar linkine tıklandı")
-                except Exception as e:
-                    log_yaz(f"⚠️ Taslak Faturalar linki bulunamadı: {e}")
-                
-                # E-fatura taslakları oku
-                try:
-                    # Tüm tabloları bekle (Headless modda daha uzun bekle)
-                    table_wait_time = 20 if (headless_var is not None and headless_var.get()) else 10
-                    tables = WebDriverWait(driver, table_wait_time).until(
-                        EC.presence_of_all_elements_located((By.TAG_NAME, "table"))
-                    )
-
-                    hedef_tablo = None
-                    for i, t in enumerate(tables):
-                        try:
-                            header = t.find_element(By.TAG_NAME, "thead").text
-                            log_yaz(f"Tablo {i} başlık: {header}")
-                            if "Fatura No" in header and "VKN" in header and "Fatura Tarihi" in header:
-                                hedef_tablo = t
-                                log_yaz(f"✅ Doğru tablo bulundu: Tablo {i}")
-                                break
-                        except:
-                            log_yaz(f"Tablo {i}: Başlık bulunamadı")
-                            continue
-
-                    if not hedef_tablo:
-                        log_yaz("❌ Uygun tablo bulunamadı")
-                        return
-
-                    # Satırları al
-                    rows = hedef_tablo.find_elements(By.TAG_NAME, "tr")[1:]  # Başlık satırını atla
-                    
-                    e_fatura_sayisi = 0  # Gerçek fatura sayacı
-                    log_yaz(f"🔍 E-fatura: Toplam {len(rows)} satır bulundu")
-                    for i, row in enumerate(rows):
-                        cells = row.find_elements(By.TAG_NAME, "td")
-                        log_yaz(f"🔍 E-fatura Satır {i}: {len(cells)} sütun")
-                        if len(cells) < 7:  # En az 7 sütun olmalı
-                            log_yaz(f"🔍 E-fatura Satır {i}: Yeterli sütun yok ({len(cells)}), atlanıyor")
-                            continue
-                        
-                        # Tüm sütunları debug et
-                        for j, c in enumerate(cells):
-                            log_yaz(f"   - Hücre[{j}]: '{c.text}' | innerHTML='{c.get_attribute('innerHTML')}'")
-                        
-                        try:
-                            # Zirve portalı tablo yapısına göre doğru sütun indeksleri:
-                            # Sütun 0: Checkbox (atla)
-                            # Sütun 1: Fatura No (ETTN) (atla)
-                            # Sütun 2: VKN + Unvan (aynı hücrede, <br> ile ayrılmış)
-                            # Sütun 3: Fatura Tarihi
-                            # Sütun 6: Ödenecek Tutar
-                            
-                            # 2. sütun: VKN + Unvan (aynı hücrede, <br> ile ayrılmış)
-                            vkn_unvan_text = cells[2].text.strip() if len(cells) > 2 else ""
-                            lines = [l.strip() for l in vkn_unvan_text.split("\n") if l.strip()]
-                            vergi_no = lines[0] if len(lines) > 0 else ""
-                            musteri = " ".join(lines[1:]) if len(lines) > 1 else ""
-                            
-                            # 3. sütun: Fatura Tarihi
-                            tarih = cells[3].text.strip() if len(cells) > 3 else ""
-                            
-                            # 6. sütun: Ödenecek Tutar (doğru sütun)
-                            tutar = cells[6].text.strip() if len(cells) > 6 else ""
-                            
-                            # Debug bilgisi - ham veriyi de göster
-                            log_yaz(f"🔍 E-fatura Satır {i}: Ham cells[2]='{cells[2].text if len(cells) > 2 else 'YOK'}', Ham cells[3]='{cells[3].text if len(cells) > 3 else 'YOK'}', Ham cells[6]='{cells[6].text if len(cells) > 6 else 'YOK'}'")
-                            log_yaz(f"🔍 E-fatura Satır {i}: VKN='{vergi_no}', Unvan='{musteri}', Tarih='{tarih}', Tutar='{tutar}'")
-                            
-                            # Esnek kontrol - sadece müşteri adı dolu olan satırları kabul et
-                            if not musteri:
-                                log_yaz(f"🔍 E-fatura Satır {i}: Müşteri adı boş, atlanıyor")
-                                continue
-                            
-                            durum = "Taslak"
-                            fatura_turu = "E-FATURA"
-                            
-                            # Gerçek fatura satırını ekle
-                            fatura_kes_table.insert("", "end", values=(
-                                musteri, vergi_no, tutar, durum, tarih, fatura_turu
-                            ))
-                            e_fatura_sayisi += 1
-                            log_yaz(f"✅ E-fatura okundu: {musteri} - {vergi_no} - {tutar}")
-                            
-                        except Exception as e:
-                            log_yaz(f"⚠️ E-fatura satırı okunamadı: {e}")
-                            continue
-                    
-                    log_yaz(f"📋 {e_fatura_sayisi} adet e-fatura taslağı okundu")
-                    
-                except Exception as e:
-                    log_yaz(f"⚠️ E-fatura taslakları okunamadı: {e}")
-                
-                # E-arşiv taslakları oku
-                try:
-                    # E-arşiv taslak linkine tıkla - farklı seçenekler dene
-                    try:
-                        e_arsiv_taslak_link = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, "//li[@id='archiveInvoiceTmp']//a[@href='/accounting/archiveInvoiceTmp']"))
-                        )
-                        e_arsiv_taslak_link.click()
-                        log_yaz("✅ E-Arşiv Taslak Faturalar linkine tıklandı")
-                    except:
-                        try:
-                            # Alternatif link dene
-                            e_arsiv_taslak_link = driver.find_element(By.XPATH, "//a[contains(@href, 'archiveInvoiceTmp')]")
-                            e_arsiv_taslak_link.click()
-                            log_yaz("✅ E-Arşiv Taslak Faturalar linkine tıklandı (alternatif)")
-                        except:
-                            # Direkt URL'ye git
-                            driver.get("https://yeniportal.zirvedonusum.com/accounting/archiveInvoiceTmp")
-                            log_yaz("✅ E-Arşiv Taslak Faturalar sayfasına gidildi")
-                    
-                    # Tüm tabloları bekle (Headless modda daha uzun bekle)
-                    table_wait_time = 20 if (headless_var is not None and headless_var.get()) else 10
-                    tables = WebDriverWait(driver, table_wait_time).until(
-                        EC.presence_of_all_elements_located((By.TAG_NAME, "table"))
-                    )
-
-                    hedef_tablo = None
-                    for i, t in enumerate(tables):
-                        try:
-                            header = t.find_element(By.TAG_NAME, "thead").text
-                            log_yaz(f"Tablo {i} başlık: {header}")
-                            if "Fatura No" in header and "VKN" in header and "Fatura Tarihi" in header:
-                                hedef_tablo = t
-                                log_yaz(f"✅ Doğru tablo bulundu: Tablo {i}")
-                                break
-                        except:
-                            log_yaz(f"Tablo {i}: Başlık bulunamadı")
-                            continue
-
-                    if not hedef_tablo:
-                        log_yaz("❌ Uygun tablo bulunamadı")
-                        return
-
-                    # Satırları al
-                    rows = hedef_tablo.find_elements(By.TAG_NAME, "tr")[1:]  # Başlık satırını atla
-                    
-                    e_arsiv_sayisi = 0  # Gerçek fatura sayacı
-                    log_yaz(f"🔍 E-arşiv: Toplam {len(rows)} satır bulundu")
-                    for i, row in enumerate(rows):
-                        cells = row.find_elements(By.TAG_NAME, "td")
-                        log_yaz(f"🔍 E-arşiv Satır {i}: {len(cells)} sütun")
-                        if len(cells) < 7:  # En az 7 sütun olmalı
-                            log_yaz(f"🔍 E-arşiv Satır {i}: Yeterli sütun yok ({len(cells)}), atlanıyor")
-                            continue
-                        
-                        # Tüm sütunları debug et
-                        for j, c in enumerate(cells):
-                            log_yaz(f"   - Hücre[{j}]: '{c.text}' | innerHTML='{c.get_attribute('innerHTML')}'")
-                        
-                        try:
-                            # Zirve portalı tablo yapısına göre doğru sütun indeksleri:
-                            # Sütun 0: Checkbox (atla)
-                            # Sütun 1: Fatura No (ETTN) (atla)
-                            # Sütun 2: VKN + Unvan (aynı hücrede, <br> ile ayrılmış)
-                            # Sütun 3: Fatura Tarihi
-                            # Sütun 6: Ödenecek Tutar
-                            
-                            # 2. sütun: VKN + Unvan (aynı hücrede, <br> ile ayrılmış)
-                            vkn_unvan_text = cells[2].text.strip() if len(cells) > 2 else ""
-                            lines = [l.strip() for l in vkn_unvan_text.split("\n") if l.strip()]
-                            vergi_no = lines[0] if len(lines) > 0 else ""
-                            musteri = " ".join(lines[1:]) if len(lines) > 1 else ""
-                            
-                            # 3. sütun: Fatura Tarihi
-                            tarih = cells[3].text.strip() if len(cells) > 3 else ""
-                            
-                            # 6. sütun: Ödenecek Tutar (doğru sütun)
-                            tutar = cells[6].text.strip() if len(cells) > 6 else ""
-                            
-                            # Debug bilgisi - ham veriyi de göster
-                            log_yaz(f"🔍 E-arşiv Satır {i}: Ham cells[2]='{cells[2].text if len(cells) > 2 else 'YOK'}', Ham cells[3]='{cells[3].text if len(cells) > 3 else 'YOK'}', Ham cells[6]='{cells[6].text if len(cells) > 6 else 'YOK'}'")
-                            log_yaz(f"🔍 E-arşiv Satır {i}: VKN='{vergi_no}', Unvan='{musteri}', Tarih='{tarih}', Tutar='{tutar}'")
-                            
-                            # Esnek kontrol - sadece müşteri adı dolu olan satırları kabul et
-                            if not musteri:
-                                log_yaz(f"🔍 E-arşiv Satır {i}: Müşteri adı boş, atlanıyor")
-                                continue
-                            
-                            durum = "E-Arşiv Taslak"
-                            fatura_turu = "E-ARŞİV"
-                            
-                            # Gerçek fatura satırını ekle
-                            fatura_kes_table.insert("", "end", values=(
-                                musteri, vergi_no, tutar, durum, tarih, fatura_turu
-                            ))
-                            e_arsiv_sayisi += 1
-                            log_yaz(f"✅ E-arşiv okundu: {musteri} - {vergi_no} - {tutar}")
-                            
-                        except Exception as e:
-                            log_yaz(f"⚠️ E-arşiv satırı okunamadı: {e}")
-                            continue
-                    
-                    log_yaz(f"📋 {e_arsiv_sayisi} adet e-arşiv taslağı okundu")
-                    
-                except Exception as e:
-                    log_yaz(f"⚠️ E-arşiv taslakları okunamadı: {e}")
-                
-                # Zebra görünümünü yenile
-                apply_zebra_striping(fatura_kes_table)
-                
-                driver.quit()
-                log_yaz("✅ Taslak faturalar okuma tamamlandı")
-                
-            except Exception as e:
-                log_yaz(f"❌ Taslak faturalar okunamadı: {e}")
-        
-        # Arka planda çalıştır
-        threading.Thread(target=read_drafts).start()
-    
-    tk.Button(frame_fatura_kes_butonlar, text="Taslak Faturaları Oku", bg="purple", fg="white", width=20, command=read_draft_invoices).pack(side="left", padx=5)
 
     # ===================================================
     # ==== SEKME 3: ÜRÜN KARTLARI ====
@@ -1947,118 +1562,7 @@ tamamlanan_faturalar = []  # 👈 Tamamlanan faturalar listesi
 is_processing = False # 👈 Şu an işlem var mı?
 headless_var = None   # 👈 Headless seçeneği (GUI içinde ayarlanır)
 
-def fatura_kes_action():
-    from tkinter import messagebox
-    import threading, traceback
-    global driver_global, fatura_queue, is_processing
-
-    # --- Önce mevcut GUI bilgilerini kuyruğa ekle ---
-    try:
-        output_file = create_temp_excel_from_table(urun_table)
-    except Exception as e:
-        messagebox.showerror("Hata", f"Excel oluşturulamadı!\n{e}")
-        return
-
-    sirket = zirve_sirket_combo.get().strip()
-    kullanici = zirve_user.get().strip()
-    sifre = zirve_pass.get().strip()
-
-    if not (sirket and kullanici and sifre):
-        messagebox.showwarning("Uyarı", "Lütfen Zirve bilgilerini doldurun!")
-        return
-
-    bilgiler = {
-        "vergi_no": musteri_vkn.get().strip(),
-        "unvan": musteri_unvan.get().strip() or f"{musteri_adi.get()} {musteri_soyadi.get()}",
-        "vergi_sehir": musteri_vd_sehir.get().strip(),
-        "vergi_dairesi": musteri_vd.get().strip(),
-        "adres": musteri_adres.get("1.0", "end").strip(),
-        "adres_sehir": musteri_adres_sehir.get().strip(),
-        "adres_ilce": musteri_ilce.get().strip(),
-        "aciklama": fatura_aciklama.get("1.0", "end").strip(),
-        "excel_path": output_file
-    }
-
-    fatura_queue.append((sirket, kullanici, sifre, bilgiler))
-    log_yaz(f"📌 Fatura kuyruğa eklendi. Toplam: {len(fatura_queue)}")
-    refresh_queue_view()  # 👈 Kuyruğu GUI’de güncelle
-
-    # Eğer şu an işlem yapılmıyorsa kuyruğu başlat
-    if not is_processing:
-        threading.Thread(target=process_queue).start()
-
-
-def process_queue():
-    global driver_global, fatura_queue, is_processing, headless_var
-    import traceback
-    is_processing = True
-
-    while fatura_queue:
-        sirket, kullanici, sifre, bilgiler = fatura_queue.pop(0)
-        try:
-            log_yaz("🚀 Yeni fatura işleniyor...")
-
-            # Selenium başlat (her faturada sıfırdan aç) - Normal tam ekran açılması için
-            log_yaz("🌐 Selenium başlatılıyor...")
-            service = Service(ChromeDriverManager().install())
-            chrome_options = Options()
-            try:
-                if headless_var is not None and headless_var.get():
-                    chrome_options.add_argument("--headless=new")
-                    chrome_options.add_argument("--window-size=1920,1080")
-                else:
-                    # Normal tam ekran açılması için
-                    chrome_options.add_argument("--start-maximized")
-                    chrome_options.add_argument("--disable-web-security")
-                    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-                    chrome_options.add_argument("--disable-extensions")
-                    chrome_options.add_argument("--no-sandbox")
-            except Exception:
-                pass
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            # Normal tam ekran için maximize_window ekle
-            try:
-                if not (headless_var is not None and headless_var.get()):
-                    driver.maximize_window()
-            except Exception:
-                pass
-
-            # 1. Portala giriş
-            login_portal(driver, kullanici, sifre)
-            log_yaz(f"✅ {sirket} için Zirve portalına giriş yapıldı.")
-
-            # 2. Fatura oluşturma akışı
-            create_invoice_simple(driver, bilgiler)
-            log_yaz("📝 Fatura oluşturma ekranı açıldı.")
-
-            check_customer_and_edit(driver, bilgiler)
-            log_yaz("🔍 Müşteri kontrolü tamamlandı.")
-
-            upload_products_from_excel(driver, bilgiler["excel_path"])
-            log_yaz("📦 Ürünler portala yüklendi.")
-
-            add_invoice_note(driver, bilgiler.get("aciklama", ""))
-            log_yaz("📝 Açıklama eklendi.")
-
-            save_and_close_invoice(driver)
-            log_yaz("💾 Fatura taslak olarak kaydedildi.")
-            
-            # Fatura listesine ekleme kaldırıldı - sadece "Taslak faturaları oku" ile doldurulacak
-            log_yaz(f"📋 Fatura tamamlandı: {bilgiler.get('unvan', '')}")
-
-        except Exception as e:
-            log_yaz(f"❌ Hata: {e}")
-            log_yaz(traceback.format_exc())
-
-        refresh_queue_view()  # 👈 Her faturadan sonra kuyruk tablosunu güncelle
-        
-        # Fatura listesi güncelleme kaldırıldı - sadece "Taslak faturaları oku" ile doldurulacak
-
-    is_processing = False
-    log_yaz("✅ Kuyruk tamamlandı, tüm faturalar işlendi.")
-    refresh_queue_view()
-    
-    # ================== END MAIN SCRIPT ==================
+# ================== END MAIN SCRIPT ==================
 
 # ================== START FATURA OKUMA FONKSİYONU ==================
 def read_invoices_from_zirve():
@@ -2424,8 +1928,602 @@ def guncelle_subeler():
     except Exception as e:
         log_yaz(f"❌ Şube güncelleme hatası: {e}")
 
+def process_fatura_indirme_kuyrugu():
+    """Fatura indirme kuyruğunu işler"""
+    global fatura_indirme_aktif, fatura_indirme_kuyrugu
+    
+    while fatura_indirme_kuyrugu:
+        fatura_indirme_aktif = True
+        kuyruk_item = fatura_indirme_kuyrugu.pop(0)
+        
+        log_yaz(f"🚀 Kuyruktan fatura indirme işlemi başlatılıyor... (Kalan: {len(fatura_indirme_kuyrugu)})")
+        
+        try:
+            # Kuyruk item'ından verileri al
+            efatura_selected = kuyruk_item['efatura_selected']
+            earsiv_selected = kuyruk_item['earsiv_selected']
+            
+            # Müşteri verilerini oku
+            try:
+                with open("musteriler.json", "r", encoding="utf-8") as f:
+                    musteri_verileri = json.load(f)
+            except Exception as e:
+                log_yaz(f"❌ Müşteri verileri okunamadı: {e}")
+                continue
+            
+            # Seçilen faturalardaki VKN'leri topla
+            secilen_vknler = set()
+            
+            # E-Fatura seçilenlerini işle
+            for item in efatura_selected:
+                values = efatura_table.item(item, "values")
+                if len(values) > 1:  # VKN sütunu (index 1)
+                    vkn = values[1].strip()
+                    if vkn:
+                        secilen_vknler.add(vkn)
+                        log_yaz(f"📋 E-Fatura VKN: {vkn}")
+            
+            # E-Arşiv seçilenlerini işle
+            for item in earsiv_selected:
+                values = earsiv_table.item(item, "values")
+                if len(values) > 1:  # VKN sütunu (index 1)
+                    vkn = values[1].strip()
+                    if vkn:
+                        secilen_vknler.add(vkn)
+                        log_yaz(f"📋 E-Arşiv VKN: {vkn}")
+            
+            # VKN'ler ile eşleşen müşterilerin şubelerini bul
+            eslesen_subeler = set()
+            
+            for musteri in musteri_verileri:
+                if len(musteri) >= 10:  # Yeterli veri var mı kontrol et
+                    vkn = musteri[0].strip()
+                    if vkn in secilen_vknler:
+                        # Sadece şube bilgilerini al (index 8)
+                        subeler = []
+                        if musteri[8]:  # a,b,c,d
+                            subeler.extend([s.strip() for s in musteri[8].split(",") if s.strip()])
+                        
+                        for sube in subeler:
+                            if sube:
+                                eslesen_subeler.add(sube)
+                        
+                        log_yaz(f"✅ VKN {vkn} eşleşti: {musteri[3] if len(musteri) > 3 else 'Bilinmeyen'}")
+            
+            # Şube combobox'ını güncelle
+            if eslesen_subeler:
+                subeler_listesi = sorted(list(eslesen_subeler))
+                fatura_kes_sube_combo['values'] = subeler_listesi
+                fatura_kes_sube_combo.set(subeler_listesi[0])
+                log_yaz(f"🏢 {len(subeler_listesi)} şube bulundu: {', '.join(subeler_listesi)}")
+            else:
+                # Şube bulunamadığında combobox'ı temizle
+                fatura_kes_sube_combo['values'] = []
+                fatura_kes_sube_combo.set("")
+                log_yaz("⚠️ Seçilen faturalar için şube bulunamadı - combobox temizlendi")
+            
+            # Fatura indirme işlemini başlat
+            log_yaz("📥 Fatura indirme işlemi başlatılıyor...")
+            
+            # GUI değerlerini thread dışında al
+            sube_degeri = fatura_kes_sube_combo.get().strip()
+            personel_degeri = fatura_kes_personel_entry.get().strip()
+            islem_turu_degeri = fatura_kes_islem_turu_combo.get().strip()
+            
+            # Selenium ile fatura indirme işlemi (synchronous - kuyruk için)
+            fatura_indir_thread_kuyruk(efatura_selected, earsiv_selected, sube_degeri, personel_degeri, islem_turu_degeri)
+            
+        except Exception as e:
+            log_yaz(f"❌ Kuyruk işleme hatası: {e}")
+    
+    fatura_indirme_aktif = False
+    log_yaz("✅ Fatura indirme kuyruğu tamamlandı")
+
+def fatura_indir_thread_kuyruk(efatura_selected, earsiv_selected, sube_degeri, personel_degeri, islem_turu_degeri):
+    """Kuyruk sistemi için fatura indirme thread'i"""
+    global zirve_user, zirve_pass, fatura_indirme_aktif
+    try:
+        # Fatura indirme durumunu aktif yap
+        fatura_indirme_aktif = True
+        log_yaz("🚀 Fatura indirme işlemi başlatıldı")
+        
+        # Chrome driver'ı başlat (Faturaları Oku ile aynı ayarlar)
+        service = Service(ChromeDriverManager().install())
+        options = webdriver.ChromeOptions()
+        
+        # Faturaları Oku fonksiyonundaki ayarları kullan
+        options.add_argument("--start-maximized")
+        options.add_argument("--disable-web-security")
+        options.add_argument("--disable-features=VizDisplayCompositor")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--no-sandbox")
+        
+        # İndirme klasörünü ayarla
+        download_dir = os.path.join(os.getcwd(), "indirilen_faturalar")
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+        
+        prefs = {
+            "download.default_directory": download_dir,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True,
+            "profile.default_content_settings.popups": 0,
+            "profile.default_content_setting_values.automatic_downloads": 1
+        }
+        options.add_experimental_option("prefs", prefs)
+        
+        driver = webdriver.Chrome(service=service, options=options)
+        driver.maximize_window()
+        
+        # Zirve portalına giriş yap
+        log_yaz("🔐 Zirve portalına giriş yapılıyor...")
+        driver.get("https://yeniportal.zirvedonusum.com/accounting/login")
+        
+        # Mevcut giriş bilgilerini al (Zirve giriş kısmındaki seçili bilgiler)
+        kullanici = zirve_user.get().strip()
+        sifre = zirve_pass.get().strip()
+        
+        log_yaz(f"🔍 Giriş bilgileri: Kullanıcı='{kullanici}', Şifre='{'*' * len(sifre) if sifre else 'BOŞ'}'")
+        
+        if not kullanici or not sifre:
+            log_yaz("❌ Kullanıcı adı veya şifre boş! Lütfen ana giriş kısmından kullanıcı adı ve şifre seçin.")
+            driver.quit()
+            return
+        
+        # Fatura Taslak Oluştur sekmesindeki giriş fonksiyonunu kullan
+        try:
+            login_portal(driver, kullanici, sifre)
+            log_yaz("✅ Portal giriş başarılı!")
+        except Exception as e:
+            log_yaz(f"❌ Giriş hatası: {e}")
+            driver.quit()
+            return
+        
+        # E-Dönüşüm menüsüne tıkla (giriş yaptıktan sonra zaten ana sayfada)
+        log_yaz("📄 E-Dönüşüm menüsüne tıklanıyor...")
+        try:
+            e_donusum_menu = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
+            )
+            e_donusum_menu.click()
+            log_yaz("✅ E-Dönüşüm menüsüne tıklandı")
+        except Exception as e:
+            log_yaz(f"❌ E-Dönüşüm menüsü bulunamadı: {e}")
+            driver.quit()
+            return
+        
+        # E-Fatura menüsüne tıkla
+        log_yaz("📄 E-Fatura menüsüne tıklanıyor...")
+        try:
+            e_fatura_menu = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eInvoice']"))
+            )
+            e_fatura_menu.click()
+            log_yaz("✅ E-Fatura menüsüne tıklandı")
+        except Exception as e:
+            log_yaz(f"❌ E-Fatura menüsü bulunamadı: {e}")
+            driver.quit()
+            return
+        
+        # Giden Faturalar linkine tıkla
+        try:
+            giden_faturalar = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[@href='/accounting/eInvoiceOutbox']"))
+            )
+            giden_faturalar.click()
+            log_yaz("✅ Giden Faturalar linkine tıklandı")
+        except Exception as e:
+            log_yaz(f"❌ Giden Faturalar linki bulunamadı: {e}")
+            driver.quit()
+            return
+        
+        # Tabloları bekle
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "table"))
+        )
+        
+        # Seçilen faturaları indir
+        indirilen_sayisi = 0
+        
+        # E-Fatura seçilenlerini işle
+        for item in efatura_selected:
+            try:
+                values = efatura_table.item(item, "values")
+                if len(values) < 6:
+                    continue
+                    
+                musteri_adi = values[0].strip()
+                vkn = values[1].strip()  # VKN'yi al
+                fatura_no = values[5].strip()
+                
+                # VKN'ye göre müşteri ismini bul
+                musteri_unvani = vkn_ile_musteri_ismi_bul(vkn)
+                if musteri_unvani:
+                    musteri_adi = musteri_unvani
+                    log_yaz(f"📋 Müşteri unvanı bulundu: {musteri_adi}")
+                else:
+                    log_yaz(f"⚠️ VKN {vkn} için unvan bulunamadı, mevcut isim kullanılıyor: {musteri_adi}")
+                
+                # Fatura isimlendirmesini oluştur
+                fatura_adi = musteri_adi
+                
+                # Şube ekle (eğer seçilmişse)
+                if sube_degeri:
+                    fatura_adi += f" - {sube_degeri}"
+                
+                # Personel ekle
+                if personel_degeri:
+                    fatura_adi += f" - {personel_degeri}"
+                
+                # İşlem türü ekle
+                if islem_turu_degeri:
+                    fatura_adi += f" - {islem_turu_degeri}"
+                
+                # Fatura numarasını ekle
+                fatura_adi += f" - {fatura_no}"
+                
+                log_yaz(f"📥 E-Fatura indiriliyor: {fatura_adi}")
+                
+                # Tablodaki satırı bul ve tıkla (optimize edildi)
+                rows = driver.find_elements(By.TAG_NAME, "tr")
+                log_yaz(f"🔍 Fatura numarası aranıyor: {fatura_no}")
+                
+                for i, row in enumerate(rows):
+                    cells = row.find_elements(By.TAG_NAME, "td")
+                    if len(cells) >= 6:
+                        # Fatura numarasını tüm sütunlarda ara (optimize edildi)
+                        fatura_bulundu = False
+                        for j, cell in enumerate(cells):
+                            if fatura_no in cell.text.strip():
+                                fatura_bulundu = True
+                                break
+                        
+                        if fatura_bulundu:
+                            
+                            # "Seçiniz" dropdown'ına tıkla
+                            try:
+                                # Dropdown butonunu bul ve tıkla (optimize edildi)
+                                dropdown_btn = row.find_element(By.CSS_SELECTOR, "button[data-toggle='dropdown']")
+                                driver.execute_script("arguments[0].click();", dropdown_btn)
+                                log_yaz("✅ Seçiniz dropdown'ına tıklandı")
+                                
+                                # Dropdown menüsünün tam açılmasını bekle
+                                time.sleep(1.0)
+                                
+                                # 1. ADIM: "Fatura PDF İndir" seçeneğini bul ve tıkla
+                                try:
+                                    # Dropdown'ın tam açıldığından emin ol
+                                    WebDriverWait(driver, 3).until(
+                                        EC.presence_of_element_located((By.CSS_SELECTOR, "a.dropdown-item"))
+                                    )
+                                    
+                                    # Tüm dropdown seçeneklerini listele
+                                    dropdown_items = driver.find_elements(By.CSS_SELECTOR, "a.dropdown-item")
+                                    log_yaz(f"🔍 Bulunan dropdown seçenekleri: {[item.text.strip() for item in dropdown_items]}")
+                                    
+                                    # "Fatura PDF İndir" seçeneğini bul
+                                    fatura_pdf_link = None
+                                    for item in dropdown_items:
+                                        if "Fatura PDF İndir" in item.text or "PDF" in item.text:
+                                            fatura_pdf_link = item
+                                            log_yaz(f"✅ PDF seçeneği bulundu: {item.text.strip()}")
+                                            break
+                                    
+                                    if not fatura_pdf_link:
+                                        raise Exception("Fatura PDF İndir seçeneği bulunamadı")
+                                    
+                                    fatura_pdf_link.click()
+                                    log_yaz("✅ Fatura PDF İndir seçildi")
+                                    
+                                    # 2. ADIM: "PDF İndir" butonunu bul ve tıkla
+                                    try:
+                                        # Yeni pencere açılmasını bekle
+                                        time.sleep(2.0)
+                                        
+                                        # Tüm pencereleri al
+                                        all_windows = driver.window_handles
+                                        
+                                        if len(all_windows) > 1:
+                                            # Yeni pencereye geç
+                                            driver.switch_to.window(all_windows[-1])
+                                            log_yaz("✅ Yeni pencereye geçildi")
+                                        else:
+                                            # Eğer yeni pencere açılmadıysa, mevcut pencerede devam et
+                                            log_yaz("⚠️ Yeni pencere açılmadı, mevcut pencerede devam ediliyor")
+                                        
+                                        # "Pdf İndir" butonunu bul (btn-info class ile)
+                                        try:
+                                            # Önce btn-info class'ı olan butonları bul
+                                            btn_info_buttons = driver.find_elements(By.CSS_SELECTOR, "a.btn-info")
+                                            log_yaz(f"🔍 Bulunan btn-info butonları: {[btn.text.strip() for btn in btn_info_buttons]}")
+                                            
+                                            # "Pdf İndir" butonunu bul
+                                            pdf_indir_btn = None
+                                            for btn in btn_info_buttons:
+                                                if "Pdf İndir" in btn.text:
+                                                    pdf_indir_btn = btn
+                                                    log_yaz(f"✅ Pdf İndir butonu bulundu: {btn.text.strip()}")
+                                                    break
+                                            
+                                            if not pdf_indir_btn:
+                                                raise Exception("Pdf İndir butonu bulunamadı")
+                                            
+                                            pdf_indir_btn.click()
+                                            log_yaz("✅ Pdf İndir butonuna tıklandı")
+                                            
+                                        except Exception as e:
+                                            log_yaz(f"❌ Pdf İndir butonu bulunamadı: {e}")
+                                            # Alternatif: Tüm butonları listele ve "Pdf İndir" ara
+                                            all_buttons = driver.find_elements(By.TAG_NAME, "a")
+                                            log_yaz(f"🔍 Tüm butonlar: {[btn.text.strip() for btn in all_buttons if btn.text.strip()]}")
+                                            
+                                            for btn in all_buttons:
+                                                if "Pdf İndir" in btn.text:
+                                                    btn.click()
+                                                    log_yaz("✅ Pdf İndir butonuna tıklandı (alternatif yöntem)")
+                                                    break
+                                            else:
+                                                raise Exception("Pdf İndir butonu hiçbir yöntemle bulunamadı")
+                                        
+                                        # İndirme tamamlanana kadar bekle
+                                        time.sleep(2)
+                                        
+                                        # İndirilen dosyayı yeniden adlandır
+                                        indirilen_dosyalar = [f for f in os.listdir(download_dir) if f.endswith('.pdf')]
+                                        if indirilen_dosyalar:
+                                            en_yeni_dosya = max([os.path.join(download_dir, f) for f in indirilen_dosyalar], 
+                                                              key=os.path.getctime)
+                                            yeni_ad = os.path.join(download_dir, f"{fatura_adi}.pdf")
+                                            os.rename(en_yeni_dosya, yeni_ad)
+                                            log_yaz(f"✅ E-Fatura indirildi: {fatura_adi}.pdf")
+                                            indirilen_sayisi += 1
+                                        
+                                        # Pencereyi kapat
+                                        if len(all_windows) > 1:
+                                            driver.close()
+                                            driver.switch_to.window(all_windows[0])
+                                        
+                                    except Exception as e:
+                                        log_yaz(f"❌ PDF İndir butonu bulunamadı: {e}")
+                                        if len(all_windows) > 1:
+                                            driver.close()
+                                            driver.switch_to.window(all_windows[0])
+                                        
+                                except Exception as e:
+                                    log_yaz(f"❌ Fatura PDF İndir seçeneği bulunamadı: {e}")
+                                    continue
+                                
+                                
+                            except Exception as e:
+                                log_yaz(f"❌ Dropdown işlemi hatası: {e}")
+                            
+                            break
+                    
+            except Exception as e:
+                log_yaz(f"⚠️ E-Fatura indirme hatası: {e}")
+                continue
+        
+        # E-Arşiv seçilenlerini işle (benzer kod)
+        if earsiv_selected:
+            log_yaz("📄 E-Arşiv sayfasına gidiliyor...")
+            # E-Dönüşüm menüsüne tıkla
+            try:
+                e_donusum_menu = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
+                )
+                e_donusum_menu.click()
+                log_yaz("✅ E-Dönüşüm menüsüne tıklandı")
+            except Exception as e:
+                log_yaz(f"❌ E-Dönüşüm menüsü bulunamadı: {e}")
+                return
+            
+            # E-Arşiv menüsüne tıkla
+            try:
+                e_arsiv_menu = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eArchive']"))
+                )
+                e_arsiv_menu.click()
+                log_yaz("✅ E-Arşiv menüsüne tıklandı")
+            except Exception as e:
+                log_yaz(f"❌ E-Arşiv menüsü bulunamadı: {e}")
+                return
+            
+            # E-Arşiv Giden Faturalar linkine tıkla
+            try:
+                earsiv_giden_faturalar = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[@href='/accounting/eArchiveOutbox']"))
+                )
+                earsiv_giden_faturalar.click()
+                log_yaz("✅ E-Arşiv Giden Faturalar linkine tıklandı")
+            except Exception as e:
+                log_yaz(f"❌ E-Arşiv Giden Faturalar linki bulunamadı: {e}")
+                return
+            
+            # Tabloları bekle
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "table"))
+            )
+            
+            for item in earsiv_selected:
+                try:
+                    values = earsiv_table.item(item, "values")
+                    if len(values) < 6:
+                        continue
+                        
+                    musteri_adi = values[0].strip()
+                    vkn = values[1].strip()  # VKN'yi al
+                    fatura_no = values[5].strip()
+                    
+                    # VKN'ye göre müşteri ismini bul
+                    musteri_unvani = vkn_ile_musteri_ismi_bul(vkn)
+                    if musteri_unvani:
+                        musteri_adi = musteri_unvani
+                        log_yaz(f"📋 Müşteri unvanı bulundu: {musteri_adi}")
+                    else:
+                        log_yaz(f"⚠️ VKN {vkn} için unvan bulunamadı, mevcut isim kullanılıyor: {musteri_adi}")
+                    
+                    # Fatura isimlendirmesini oluştur
+                    fatura_adi = musteri_adi
+                    
+                    # Şube ekle (eğer seçilmişse)
+                    if sube_degeri:
+                        fatura_adi += f" - {sube_degeri}"
+                    
+                    # Personel ekle
+                    if personel_degeri:
+                        fatura_adi += f" - {personel_degeri}"
+                    
+                    # İşlem türü ekle
+                    if islem_turu_degeri:
+                        fatura_adi += f" - {islem_turu_degeri}"
+                    
+                    # Fatura numarasını ekle
+                    fatura_adi += f" - {fatura_no}"
+                    
+                    log_yaz(f"📥 E-Arşiv indiriliyor: {fatura_adi}")
+                    
+                    # Tablodaki satırı bul ve tıkla
+                    rows = driver.find_elements(By.TAG_NAME, "tr")
+                    for row in rows:
+                        cells = row.find_elements(By.TAG_NAME, "td")
+                        if len(cells) >= 6:
+                            # Fatura numarasını kontrol et
+                            if cells[1].text.strip() == fatura_no:
+                                # "Seçiniz" dropdown'ına tıkla
+                                dropdown_btn = row.find_element(By.CSS_SELECTOR, "button[data-toggle='dropdown']")
+                                driver.execute_script("arguments[0].click();", dropdown_btn)
+                                
+                                # Dropdown menüsünün tam açılmasını bekle
+                                time.sleep(1.0)
+                                
+                                # 1. ADIM: "Fatura PDF İndir" seçeneğini bul ve tıkla
+                                try:
+                                    # Dropdown'ın tam açıldığından emin ol
+                                    WebDriverWait(driver, 3).until(
+                                        EC.presence_of_element_located((By.CSS_SELECTOR, "a.dropdown-item"))
+                                    )
+                                    
+                                    # Tüm dropdown seçeneklerini listele
+                                    dropdown_items = driver.find_elements(By.CSS_SELECTOR, "a.dropdown-item")
+                                    log_yaz(f"🔍 Bulunan dropdown seçenekleri: {[item.text.strip() for item in dropdown_items]}")
+                                    
+                                    # "Fatura PDF İndir" seçeneğini bul
+                                    fatura_pdf_link = None
+                                    for item in dropdown_items:
+                                        if "Fatura PDF İndir" in item.text or "PDF" in item.text:
+                                            fatura_pdf_link = item
+                                            log_yaz(f"✅ PDF seçeneği bulundu: {item.text.strip()}")
+                                            break
+                                    
+                                    if not fatura_pdf_link:
+                                        raise Exception("Fatura PDF İndir seçeneği bulunamadı")
+                                    
+                                    fatura_pdf_link.click()
+                                    log_yaz("✅ Fatura PDF İndir seçildi")
+                                    
+                                    # 2. ADIM: "PDF İndir" butonunu bul ve tıkla
+                                    try:
+                                        # Yeni pencere açılmasını bekle
+                                        time.sleep(2.0)
+                                        
+                                        # Tüm pencereleri al
+                                        all_windows = driver.window_handles
+                                        
+                                        if len(all_windows) > 1:
+                                            # Yeni pencereye geç
+                                            driver.switch_to.window(all_windows[-1])
+                                            log_yaz("✅ Yeni pencereye geçildi")
+                                        else:
+                                            # Eğer yeni pencere açılmadıysa, mevcut pencerede devam et
+                                            log_yaz("⚠️ Yeni pencere açılmadı, mevcut pencerede devam ediliyor")
+                                        
+                                        # "Pdf İndir" butonunu bul (btn-info class ile)
+                                        try:
+                                            # Önce btn-info class'ı olan butonları bul
+                                            btn_info_buttons = driver.find_elements(By.CSS_SELECTOR, "a.btn-info")
+                                            log_yaz(f"🔍 Bulunan btn-info butonları: {[btn.text.strip() for btn in btn_info_buttons]}")
+                                            
+                                            # "Pdf İndir" butonunu bul
+                                            pdf_indir_btn = None
+                                            for btn in btn_info_buttons:
+                                                if "Pdf İndir" in btn.text:
+                                                    pdf_indir_btn = btn
+                                                    log_yaz(f"✅ Pdf İndir butonu bulundu: {btn.text.strip()}")
+                                                    break
+                                            
+                                            if not pdf_indir_btn:
+                                                raise Exception("Pdf İndir butonu bulunamadı")
+                                            
+                                            pdf_indir_btn.click()
+                                            log_yaz("✅ Pdf İndir butonuna tıklandı")
+                                            
+                                        except Exception as e:
+                                            log_yaz(f"❌ Pdf İndir butonu bulunamadı: {e}")
+                                            # Alternatif: Tüm butonları listele ve "Pdf İndir" ara
+                                            all_buttons = driver.find_elements(By.TAG_NAME, "a")
+                                            log_yaz(f"🔍 Tüm butonlar: {[btn.text.strip() for btn in all_buttons if btn.text.strip()]}")
+                                            
+                                            for btn in all_buttons:
+                                                if "Pdf İndir" in btn.text:
+                                                    btn.click()
+                                                    log_yaz("✅ Pdf İndir butonuna tıklandı (alternatif yöntem)")
+                                                    break
+                                            else:
+                                                raise Exception("Pdf İndir butonu hiçbir yöntemle bulunamadı")
+                                        
+                                        # İndirme tamamlanana kadar bekle
+                                        time.sleep(2)
+                                        
+                                        # İndirilen dosyayı yeniden adlandır
+                                        indirilen_dosyalar = [f for f in os.listdir(download_dir) if f.endswith('.pdf')]
+                                        if indirilen_dosyalar:
+                                            en_yeni_dosya = max([os.path.join(download_dir, f) for f in indirilen_dosyalar], 
+                                                              key=os.path.getctime)
+                                            yeni_ad = os.path.join(download_dir, f"{fatura_adi}.pdf")
+                                            os.rename(en_yeni_dosya, yeni_ad)
+                                            log_yaz(f"✅ E-Arşiv indirildi: {fatura_adi}.pdf")
+                                            indirilen_sayisi += 1
+                                        
+                                        # Pencereyi kapat
+                                        if len(all_windows) > 1:
+                                            driver.close()
+                                            driver.switch_to.window(all_windows[0])
+                                        
+                                    except Exception as e:
+                                        log_yaz(f"❌ PDF İndir butonu bulunamadı: {e}")
+                                        if len(all_windows) > 1:
+                                            driver.close()
+                                            driver.switch_to.window(all_windows[0])
+                                        
+                                except Exception as e:
+                                    log_yaz(f"❌ Fatura PDF İndir seçeneği bulunamadı: {e}")
+                                    continue
+                                
+                                break
+                    
+                except Exception as e:
+                    log_yaz(f"⚠️ E-Arşiv indirme hatası: {e}")
+                    continue
+        
+        driver.quit()
+        log_yaz(f"🎉 Toplam {indirilen_sayisi} fatura indirildi!")
+        
+    except Exception as e:
+        log_yaz(f"❌ Fatura indirme hatası: {e}")
+        try:
+            driver.quit()
+        except:
+            pass
+    finally:
+        # Fatura indirme durumunu pasif yap
+        fatura_indirme_aktif = False
+        log_yaz("✅ Fatura indirme işlemi tamamlandı")
+
 def indir_secilen_faturalar():
     """Seçilen faturaları indir"""
+    global fatura_kes_sube_combo, fatura_kes_personel_entry, fatura_kes_islem_turu_combo, fatura_indirme_aktif, fatura_indirme_kuyrugu  # Fatura Kes sekmesi kaldırıldı, değişkenler korundu
+    
     try:
         # E-Fatura tablosundan seçilenleri al
         efatura_selected = efatura_table.selection()
@@ -2437,67 +2535,442 @@ def indir_secilen_faturalar():
         
         log_yaz(f"🔍 {len(efatura_selected)} E-Fatura, {len(earsiv_selected)} E-Arşiv seçildi")
         
-        # Müşteri verilerini oku
-        try:
-            with open("musteriler.json", "r", encoding="utf-8") as f:
-                musteri_verileri = json.load(f)
-        except Exception as e:
-            log_yaz(f"❌ Müşteri verileri okunamadı: {e}")
-            return
+        # Seçilen faturaları kuyruğa ekle
+        fatura_indirme_kuyrugu.append({
+            'efatura_selected': efatura_selected,
+            'earsiv_selected': earsiv_selected,
+            'timestamp': time.time()
+        })
         
-        # Seçilen faturalardaki VKN'leri topla
-        secilen_vknler = set()
+        log_yaz(f"📋 Fatura indirme kuyruğa eklendi. Kuyruk sırası: {len(fatura_indirme_kuyrugu)}")
         
-        # E-Fatura seçilenlerini işle
-        for item in efatura_selected:
-            values = efatura_table.item(item, "values")
-            if len(values) > 1:  # VKN sütunu (index 1)
-                vkn = values[1].strip()
-                if vkn:
-                    secilen_vknler.add(vkn)
-                    log_yaz(f"📋 E-Fatura VKN: {vkn}")
+        # Eğer şu an işlem yapılmıyorsa kuyruğu başlat
+        if not fatura_indirme_aktif:
+            threading.Thread(target=process_fatura_indirme_kuyrugu, daemon=True).start()
         
-        # E-Arşiv seçilenlerini işle
-        for item in earsiv_selected:
-            values = earsiv_table.item(item, "values")
-            if len(values) > 1:  # VKN sütunu (index 1)
-                vkn = values[1].strip()
-                if vkn:
-                    secilen_vknler.add(vkn)
-                    log_yaz(f"📋 E-Arşiv VKN: {vkn}")
+        return  # Kuyruğa eklendi, işlem thread'de devam edecek
         
-        # VKN'ler ile eşleşen müşterilerin şubelerini bul
-        eslesen_subeler = set()
-        
-        for musteri in musteri_verileri:
-            if len(musteri) >= 10:  # Yeterli veri var mı kontrol et
-                vkn = musteri[0].strip()
-                if vkn in secilen_vknler:
-                    # Sadece şube bilgilerini al (index 8)
-                    subeler = []
-                    if musteri[8]:  # a,b,c,d
-                        subeler.extend([s.strip() for s in musteri[8].split(",") if s.strip()])
+        # Selenium ile fatura indirme işlemi
+        def fatura_indir_thread(efatura_selected, earsiv_selected, sube_degeri, personel_degeri, islem_turu_degeri):
+            global zirve_user, zirve_pass, fatura_indirme_aktif
+            try:
+                # Fatura indirme durumunu aktif yap
+                fatura_indirme_aktif = True
+                log_yaz("🚀 Fatura indirme işlemi başlatıldı")
+                # Chrome driver'ı başlat (Faturaları Oku ile aynı ayarlar)
+                service = Service(ChromeDriverManager().install())
+                options = webdriver.ChromeOptions()
+                
+                # Faturaları Oku fonksiyonundaki ayarları kullan
+                options.add_argument("--start-maximized")
+                options.add_argument("--disable-web-security")
+                options.add_argument("--disable-features=VizDisplayCompositor")
+                options.add_argument("--disable-extensions")
+                options.add_argument("--no-sandbox")
+                
+                # İndirme klasörünü ayarla
+                download_dir = os.path.join(os.getcwd(), "indirilen_faturalar")
+                if not os.path.exists(download_dir):
+                    os.makedirs(download_dir)
+                
+                prefs = {
+                    "download.default_directory": download_dir,
+                    "download.prompt_for_download": False,
+                    "download.directory_upgrade": True,
+                    "safebrowsing.enabled": True,
+                    "profile.default_content_settings.popups": 0,
+                    "profile.default_content_setting_values.automatic_downloads": 1
+                }
+                options.add_experimental_option("prefs", prefs)
+                
+                driver = webdriver.Chrome(service=service, options=options)
+                driver.maximize_window()
+                
+                # Zirve portalına giriş yap
+                log_yaz("🔐 Zirve portalına giriş yapılıyor...")
+                driver.get("https://yeniportal.zirvedonusum.com/accounting/login")
+                
+                # Mevcut giriş bilgilerini al (Zirve giriş kısmındaki seçili bilgiler)
+                kullanici = zirve_user.get().strip()
+                sifre = zirve_pass.get().strip()
+                
+                log_yaz(f"🔍 Giriş bilgileri: Kullanıcı='{kullanici}', Şifre='{'*' * len(sifre) if sifre else 'BOŞ'}'")
+                
+                if not kullanici or not sifre:
+                    log_yaz("❌ Kullanıcı adı veya şifre boş! Lütfen ana giriş kısmından kullanıcı adı ve şifre seçin.")
+                    driver.quit()
+                    return
+                
+                # Fatura Taslak Oluştur sekmesindeki giriş fonksiyonunu kullan
+                try:
+                    login_portal(driver, kullanici, sifre)
+                    log_yaz("✅ Portal giriş başarılı!")
+                except Exception as e:
+                    log_yaz(f"❌ Giriş hatası: {e}")
+                    driver.quit()
+                    return
+                
+                # E-Dönüşüm menüsüne tıkla (giriş yaptıktan sonra zaten ana sayfada)
+                log_yaz("📄 E-Dönüşüm menüsüne tıklanıyor...")
+                try:
+                    e_donusum_menu = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
+                    )
+                    e_donusum_menu.click()
+                    log_yaz("✅ E-Dönüşüm menüsüne tıklandı")
+                except Exception as e:
+                    log_yaz(f"❌ E-Dönüşüm menüsü bulunamadı: {e}")
+                    driver.quit()
+                    return
+                
+                # E-Fatura menüsüne tıkla
+                log_yaz("📄 E-Fatura menüsüne tıklanıyor...")
+                try:
+                    e_fatura_menu = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eInvoice']"))
+                    )
+                    e_fatura_menu.click()
+                    log_yaz("✅ E-Fatura menüsüne tıklandı")
+                except Exception as e:
+                    log_yaz(f"❌ E-Fatura menüsü bulunamadı: {e}")
+                    driver.quit()
+                    return
+                
+                # Giden Faturalar linkine tıkla
+                try:
+                    giden_faturalar = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@href='/accounting/eInvoiceOutbox']"))
+                    )
+                    giden_faturalar.click()
+                    log_yaz("✅ Giden Faturalar linkine tıklandı")
+                except Exception as e:
+                    log_yaz(f"❌ Giden Faturalar linki bulunamadı: {e}")
+                    driver.quit()
+                    return
+                
+                # Tabloları bekle
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "table"))
+                )
+                
+                # Seçilen faturaları indir
+                indirilen_sayisi = 0
+                
+                # E-Fatura seçilenlerini işle
+                for item in efatura_selected:
+                    try:
+                        values = efatura_table.item(item, "values")
+                        if len(values) < 6:
+                            continue
+                            
+                        musteri_adi = values[0].strip()
+                        vkn = values[1].strip()  # VKN'yi al
+                        fatura_no = values[5].strip()
+                        
+                        # VKN'ye göre müşteri ismini bul
+                        musteri_unvani = vkn_ile_musteri_ismi_bul(vkn)
+                        if musteri_unvani:
+                            musteri_adi = musteri_unvani
+                            log_yaz(f"📋 Müşteri unvanı bulundu: {musteri_adi}")
+                        else:
+                            log_yaz(f"⚠️ VKN {vkn} için unvan bulunamadı, mevcut isim kullanılıyor: {musteri_adi}")
+                        
+                        # Fatura isimlendirmesini oluştur
+                        fatura_adi = musteri_adi
+                        
+                        # Şube ekle (eğer seçilmişse)
+                        if sube_degeri:
+                            fatura_adi += f" - {sube_degeri}"
+                        
+                        # Personel ekle
+                        if personel_degeri:
+                            fatura_adi += f" - {personel_degeri}"
+                        
+                        # İşlem türü ekle
+                        if islem_turu_degeri:
+                            fatura_adi += f" - {islem_turu_degeri}"
+                        
+                        # Fatura numarasını ekle
+                        fatura_adi += f" - {fatura_no}"
+                        
+                        log_yaz(f"📥 E-Fatura indiriliyor: {fatura_adi}")
+                        
+                        # Tablodaki satırı bul ve tıkla (optimize edildi)
+                        rows = driver.find_elements(By.TAG_NAME, "tr")
+                        log_yaz(f"🔍 Fatura numarası aranıyor: {fatura_no}")
+                        
+                        for i, row in enumerate(rows):
+                            cells = row.find_elements(By.TAG_NAME, "td")
+                            if len(cells) >= 6:
+                                # Fatura numarasını tüm sütunlarda ara (optimize edildi)
+                                fatura_bulundu = False
+                                for j, cell in enumerate(cells):
+                                    if fatura_no in cell.text.strip():
+                                        fatura_bulundu = True
+                                        break
+                                
+                                if fatura_bulundu:
+                                    
+                                    # "Seçiniz" dropdown'ına tıkla
+                                    try:
+                                        # Dropdown butonunu bul ve tıkla (optimize edildi)
+                                        dropdown_btn = row.find_element(By.CSS_SELECTOR, "button[data-toggle='dropdown']")
+                                        driver.execute_script("arguments[0].click();", dropdown_btn)
+                                        log_yaz("✅ Seçiniz dropdown'ına tıklandı")
+                                        
+                                        # Dropdown menüsünün açılmasını bekle (optimize edildi)
+                                        time.sleep(0.5)
+                                        
+                                        # "Fatura PDF İndir" seçeneğini bul ve tıkla (optimize edildi)
+                                        try:
+                                            # Fatura PDF İndir seçeneğini direkt bul
+                                            pdf_indir_link = WebDriverWait(driver, 3).until(
+                                                EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Fatura PDF İndir')]"))
+                                            )
+                                            pdf_indir_link.click()
+                                            log_yaz("✅ Fatura PDF İndir seçildi")
+                                        except Exception as e:
+                                            log_yaz(f"❌ PDF İndir seçimi hatası: {e}")
+                                            continue
+                                        
+                                        # Yeni pencere açılmasını bekle (optimize edildi)
+                                        time.sleep(1.5)
+                                        
+                                        # Tüm pencereleri al (optimize edildi)
+                                        all_windows = driver.window_handles
+                                        
+                                        if len(all_windows) > 1:
+                                            # Yeni pencereye geç
+                                            driver.switch_to.window(all_windows[-1])
+                                            log_yaz("✅ Yeni pencereye geçildi")
+                                        else:
+                                            # Eğer yeni pencere açılmadıysa, mevcut pencerede devam et
+                                            log_yaz("⚠️ Yeni pencere açılmadı, mevcut pencerede devam ediliyor")
+                                        
+                                        # İndir butonunu bul ve tıkla (optimize edildi)
+                                        try:
+                                            # Yeni pencereye geç
+                                            if len(all_windows) > 1:
+                                                driver.switch_to.window(all_windows[-1])
+                                            
+                                            # İndir butonunu farklı seçicilerle ara (optimize edildi)
+                                            indir_btn = None
+                                            try:
+                                                # Önce div#icon ile dene
+                                                indir_btn = WebDriverWait(driver, 3).until(
+                                                    EC.element_to_be_clickable((By.CSS_SELECTOR, "div#icon"))
+                                                )
+                                            except:
+                                                try:
+                                                    # "Pdf İndir" metni ile dene
+                                                    indir_btn = WebDriverWait(driver, 3).until(
+                                                        EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Pdf İndir')]"))
+                                                    )
+                                                except:
+                                                    try:
+                                                        # "İndir" metni ile dene
+                                                        indir_btn = WebDriverWait(driver, 3).until(
+                                                            EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'İndir')]"))
+                                                        )
+                                                    except:
+                                                        raise Exception("İndir butonu bulunamadı")
+                                            indir_btn.click()
+                                            log_yaz("✅ İndir butonuna tıklandı")
+                                            
+                                            # İndirme tamamlanana kadar bekle (optimize edildi)
+                                            time.sleep(2)
+                                            
+                                            # İndirilen dosyayı yeniden adlandır
+                                            indirilen_dosyalar = [f for f in os.listdir(download_dir) if f.endswith('.pdf')]
+                                            if indirilen_dosyalar:
+                                                en_yeni_dosya = max([os.path.join(download_dir, f) for f in indirilen_dosyalar], 
+                                                                  key=os.path.getctime)
+                                                yeni_ad = os.path.join(download_dir, f"{fatura_adi}.pdf")
+                                                os.rename(en_yeni_dosya, yeni_ad)
+                                                log_yaz(f"✅ E-Fatura indirildi: {fatura_adi}.pdf")
+                                                indirilen_sayisi += 1
+                                            
+                                            # Pencereyi kapat
+                                            driver.close()
+                                            driver.switch_to.window(all_windows[0])
+                                            
+                                        except Exception as e:
+                                            log_yaz(f"❌ İndir butonu bulunamadı: {e}")
+                                            if len(all_windows) > 1:
+                                                driver.close()
+                                                driver.switch_to.window(all_windows[0])
+                                        else:
+                                            log_yaz("❌ Yeni pencere açılmadı")
+                                        
+                                    except Exception as e:
+                                        log_yaz(f"❌ Dropdown işlemi hatası: {e}")
+                                    
+                                    break
+                        
+                    except Exception as e:
+                        log_yaz(f"⚠️ E-Fatura indirme hatası: {e}")
+                        continue
+                
+                # E-Arşiv seçilenlerini işle
+                if earsiv_selected:
+                    log_yaz("📄 E-Arşiv sayfasına gidiliyor...")
+                    # E-Dönüşüm menüsüne tıkla
+                    try:
+                        e_donusum_menu = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
+                        )
+                        e_donusum_menu.click()
+                        log_yaz("✅ E-Dönüşüm menüsüne tıklandı")
+                    except Exception as e:
+                        log_yaz(f"❌ E-Dönüşüm menüsü bulunamadı: {e}")
+                        return
                     
-                    for sube in subeler:
-                        if sube:
-                            eslesen_subeler.add(sube)
+                    # E-Arşiv menüsüne tıkla
+                    try:
+                        e_arsiv_menu = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eArchive']"))
+                        )
+                        e_arsiv_menu.click()
+                        log_yaz("✅ E-Arşiv menüsüne tıklandı")
+                    except Exception as e:
+                        log_yaz(f"❌ E-Arşiv menüsü bulunamadı: {e}")
+                        return
                     
-                    log_yaz(f"✅ VKN {vkn} eşleşti: {musteri[3] if len(musteri) > 3 else 'Bilinmeyen'}")
+                    # E-Arşiv Giden Faturalar linkine tıkla
+                    try:
+                        earsiv_giden_faturalar = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.XPATH, "//a[@href='/accounting/eArchiveOutbox']"))
+                        )
+                        earsiv_giden_faturalar.click()
+                        log_yaz("✅ E-Arşiv Giden Faturalar linkine tıklandı")
+                    except Exception as e:
+                        log_yaz(f"❌ E-Arşiv Giden Faturalar linki bulunamadı: {e}")
+                        return
+                    
+                    # Tabloları bekle
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "table"))
+                    )
+                    
+                    for item in earsiv_selected:
+                        try:
+                            values = earsiv_table.item(item, "values")
+                            if len(values) < 6:
+                                continue
+                                
+                            musteri_adi = values[0].strip()
+                            vkn = values[1].strip()  # VKN'yi al
+                            fatura_no = values[5].strip()
+                            
+                            # VKN'ye göre müşteri ismini bul
+                            musteri_unvani = vkn_ile_musteri_ismi_bul(vkn)
+                            if musteri_unvani:
+                                musteri_adi = musteri_unvani
+                                log_yaz(f"📋 Müşteri unvanı bulundu: {musteri_adi}")
+                            else:
+                                log_yaz(f"⚠️ VKN {vkn} için unvan bulunamadı, mevcut isim kullanılıyor: {musteri_adi}")
+                            
+                            # Fatura isimlendirmesini oluştur
+                            fatura_adi = musteri_adi
+                            
+                            # Şube ekle (eğer seçilmişse)
+                            if sube_degeri:
+                                fatura_adi += f" - {sube_degeri}"
+                            
+                            # Personel ekle
+                            if personel_degeri:
+                                fatura_adi += f" - {personel_degeri}"
+                            
+                            # İşlem türü ekle
+                            if islem_turu_degeri:
+                                fatura_adi += f" - {islem_turu_degeri}"
+                            
+                            # Fatura numarasını ekle
+                            fatura_adi += f" - {fatura_no}"
+                            
+                            log_yaz(f"📥 E-Arşiv indiriliyor: {fatura_adi}")
+                            
+                            # Tablodaki satırı bul ve tıkla
+                            rows = driver.find_elements(By.TAG_NAME, "tr")
+                            for row in rows:
+                                cells = row.find_elements(By.TAG_NAME, "td")
+                                if len(cells) >= 6:
+                                    # Fatura numarasını kontrol et
+                                    if cells[1].text.strip() == fatura_no:
+                                        # "Seçiniz" dropdown'ına tıkla
+                                        dropdown_btn = row.find_element(By.CSS_SELECTOR, "button[data-toggle='dropdown']")
+                                        driver.execute_script("arguments[0].click();", dropdown_btn)
+                                        
+                                        # "Fatura PDF İndir" seçeneğini bul ve tıkla
+                                        pdf_indir_link = WebDriverWait(driver, 5).until(
+                                            EC.element_to_be_clickable((By.XPATH, "//a[@class='dropdown-item' and contains(.//i, 'fa-file-pdf-o') and contains(text(), 'Fatura PDF İndir')]"))
+                                        )
+                                        pdf_indir_link.click()
+                                        log_yaz("✅ Fatura PDF İndir seçildi")
+                                        
+                                        # Yeni pencere açılmasını bekle (optimize edildi)
+                                        time.sleep(1)
+                                        
+                                        # Tüm pencereleri al
+                                        all_windows = driver.window_handles
+                                        if len(all_windows) > 1:
+                                            # Yeni pencereye geç
+                                            driver.switch_to.window(all_windows[-1])
+                                            log_yaz("✅ Yeni pencereye geçildi")
+                                            
+                                            # İndir butonunu bul ve tıkla
+                                            try:
+                                                indir_btn = WebDriverWait(driver, 10).until(
+                                                    EC.element_to_be_clickable((By.CSS_SELECTOR, "div#icon"))
+                                                )
+                                                indir_btn.click()
+                                                log_yaz("✅ İndir butonuna tıklandı")
+                                                
+                                                # İndirme tamamlanana kadar bekle (optimize edildi)
+                                                time.sleep(2)
+                                                
+                                                # İndirilen dosyayı yeniden adlandır
+                                                indirilen_dosyalar = [f for f in os.listdir(download_dir) if f.endswith('.pdf')]
+                                                if indirilen_dosyalar:
+                                                    en_yeni_dosya = max([os.path.join(download_dir, f) for f in indirilen_dosyalar], 
+                                                                      key=os.path.getctime)
+                                                    yeni_ad = os.path.join(download_dir, f"{fatura_adi}.pdf")
+                                                    os.rename(en_yeni_dosya, yeni_ad)
+                                                    log_yaz(f"✅ E-Arşiv indirildi: {fatura_adi}.pdf")
+                                                    indirilen_sayisi += 1
+                                                
+                                                # Yeni pencereyi kapat ve ana pencereye dön
+                                                driver.close()
+                                                driver.switch_to.window(all_windows[0])
+                                                log_yaz("✅ Ana pencereye dönüldü")
+                                                
+                                            except Exception as e:
+                                                log_yaz(f"❌ E-Arşiv indirme hatası: {e}")
+                                                # Hata durumunda da ana pencereye dön
+                                                driver.close()
+                                                driver.switch_to.window(all_windows[0])
+                                        
+                                        break
+                            
+                        except Exception as e:
+                            log_yaz(f"⚠️ E-Arşiv indirme hatası: {e}")
+                            continue
+                
+                driver.quit()
+                log_yaz(f"🎉 Toplam {indirilen_sayisi} fatura indirildi!")
+                
+            except Exception as e:
+                log_yaz(f"❌ Fatura indirme hatası: {e}")
+                try:
+                    driver.quit()
+                except:
+                    pass
+            finally:
+                # Fatura indirme durumunu pasif yap
+                fatura_indirme_aktif = False
+                log_yaz("✅ Fatura indirme işlemi tamamlandı")
         
-        # Şube combobox'ını güncelle
-        if eslesen_subeler:
-            subeler_listesi = sorted(list(eslesen_subeler))
-            fatura_kes_sube_combo['values'] = subeler_listesi
-            fatura_kes_sube_combo.set(subeler_listesi[0])
-            log_yaz(f"🏢 {len(subeler_listesi)} şube bulundu: {', '.join(subeler_listesi)}")
-        else:
-            # Şube bulunamadığında combobox'ı temizle
-            fatura_kes_sube_combo['values'] = []
-            fatura_kes_sube_combo.set("")
-            log_yaz("⚠️ Seçilen faturalar için şube bulunamadı - combobox temizlendi")
-        
-        # TODO: Fatura indirme işlemi burada yapılacak
-        log_yaz("📥 Fatura indirme işlemi başlatılacak...")
+        # Fatura indirme işlemi kuyruk sistemi ile yönetiliyor
         
     except Exception as e:
         log_yaz(f"❌ Fatura indirme hatası: {e}")
@@ -2507,7 +2980,3 @@ print("🔄 GitHub güncelleme kontrolü - 2025-09-20 17:15:00")
 
 gui_main()
 tk.mainloop()
-
-
-
-
