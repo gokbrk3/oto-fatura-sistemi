@@ -2348,3 +2348,4 @@ print("🔄 GitHub güncelleme kontrolü - 2025-09-20 17:15:00")
 if __name__ == "__main__":
     gui_main()
     tk.mainloop()
+
