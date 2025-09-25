@@ -36,6 +36,7 @@ queue_table = None
 fatura_indirme_aktif = False  # Fatura indirme durumu kontrolü
 fatura_indirme_kuyrugu = []  # Fatura indirme kuyruğu
 secilen_musteri_vknleri = set()  # Seçilen müşterilerin VKN'leri
+urun_combo = None  # Ürün seçim combobox'ı
 
 
 
@@ -66,149 +67,6 @@ def vkn_ile_musteri_ismi_bul(vkn):
         log_yaz(f"⚠️ Müşteri verisi okunamadı: {e}")
         return None
 
-class AutocompleteCombobox(tk.Frame):
-    def __init__(self, master, values=None, width=20, next_widget=None,
-                 linked_fields=None, kart_table=None, **kwargs):
-        super().__init__(master, **kwargs)
-        self.values = values if values else []
-        self.next_widget = next_widget
-        self.linked_fields = linked_fields
-        self.kart_table = kart_table
-
-        self.var = tk.StringVar()
-
-        # Üst satır: Entry + ▼ butonu
-        top_frame = tk.Frame(self)
-        top_frame.pack(fill="x")
-
-        self.entry = tk.Entry(top_frame, textvariable=self.var, width=width)
-        self.entry.pack(side="left", fill="x", expand=True)
-
-        self.button = tk.Button(top_frame, text="▼", width=2, command=self.show_all)
-        self.button.pack(side="right")
-
-        # Aşağı açılan liste
-        self.listbox = tk.Listbox(self, height=5)
-        self.listbox.bind("<<ListboxSelect>>", self.on_select)
-        self.listbox.pack_forget()
-
-        # Entry eventleri
-        self.entry.bind("<KeyRelease>", self.on_keyrelease)
-        self.entry.bind("<Down>", self.focus_listbox)
-        self.entry.bind("<Return>", self.confirm_selection)
-        self.entry.bind("<Tab>", self.confirm_selection)
-
-        # Listbox eventleri
-        self.listbox.bind("<Return>", self.confirm_selection)
-        self.listbox.bind("<Double-Button-1>", self.on_select)
-        self.listbox.bind("<Tab>", self.confirm_selection)
-        self.listbox.bind("<Down>", self.move_down)
-        self.listbox.bind("<Up>", self.move_up)
-
-    def show_all(self):
-        self.listbox.delete(0, tk.END)
-        for v in self.values:
-            self.listbox.insert(tk.END, v)
-        self.listbox.pack(fill="x")
-
-    def get_values(self):
-        return self.values
-    def set_values(self, new_values):
-        self.values = new_values
-    @property
-    def master_values(self):
-        return self.values
-    @master_values.setter
-    def master_values(self, new_values):
-        self.values = new_values
-
-    def on_keyrelease(self, event):
-        text = self.var.get().lower()
-        if text == "":
-            self.listbox.pack_forget()
-            return
-        matches = [v for v in self.values if text in v.lower()]
-        self.listbox.delete(0, tk.END)
-        if matches:
-            for m in matches:
-                self.listbox.insert(tk.END, m)
-            self.listbox.pack(fill="x")
-        else:
-            self.listbox.pack_forget()
-
-    def fill_linked_fields(self, value):
-        if not (self.kart_table and self.linked_fields and value):
-            return
-        for child in self.kart_table.get_children():
-            tur, ad, b, f, k = self.kart_table.item(child, "values")
-            if value == f"{tur} ({ad})":
-                self.linked_fields["birim"].delete(0, "end")
-                self.linked_fields["birim"].insert(0, b)
-                self.linked_fields["fiyat"].delete(0, "end")
-                self.linked_fields["fiyat"].insert(0, f)
-                self.linked_fields["kdv"].delete(0, "end")
-                self.linked_fields["kdv"].insert(0, k)
-                break
-
-    def on_select(self, event):
-        if not self.listbox.curselection():
-            return
-        index = self.listbox.curselection()[0]
-        value = self.listbox.get(index)
-        self.var.set(value)
-        self.listbox.pack_forget()
-        self.fill_linked_fields(value)
-        if self.next_widget:
-            self.next_widget.focus_set()
-
-    def confirm_selection(self, event):
-        if self.listbox.curselection():
-            index = self.listbox.curselection()[0]
-            value = self.listbox.get(index)
-        else:
-            value = self.var.get()
-        self.var.set(value)
-        self.listbox.pack_forget()
-        self.fill_linked_fields(value)
-        if self.next_widget:
-            self.next_widget.focus_set()
-        return "break"
-
-    def focus_listbox(self, event):
-        if self.listbox.size() > 0:
-            self.listbox.focus_set()
-            self.listbox.selection_clear(0, tk.END)
-            self.listbox.selection_set(0)
-            self.listbox.activate(0)
-        return "break"
-
-    def move_down(self, event):
-        idx = self.listbox.curselection()[0] if self.listbox.curselection() else -1
-        if idx < self.listbox.size() - 1:
-            self.listbox.selection_clear(0, tk.END)
-            self.listbox.selection_set(idx + 1)
-            self.listbox.activate(idx + 1)
-        return "break"
-
-    def move_up(self, event):
-        idx = self.listbox.curselection()[0] if self.listbox.curselection() else 0
-        if idx > 0:
-            self.listbox.selection_clear(0, tk.END)
-            self.listbox.selection_set(idx - 1)
-            self.listbox.activate(idx - 1)
-        return "break"
-
-    def get(self):
-        return self.var.get()
-
-    def set(self, value):
-        self.var.set(value)
-        self.listbox.pack_forget()
-        if value:
-            self.fill_linked_fields(value)
-
-    def update_values(self, new_values):
-        self.values = new_values
 # ================== END HELPERS ==================
 
 
@@ -275,9 +133,9 @@ def load_kartlar(kart_table):
         
         # Combobox'ları güncelle (urun_combo henüz tanımlanmamış olabilir)
         try:
-            if 'urun_combo' in globals():
+            if 'urun_combo' in globals() and urun_combo:
                 urun_combo['values'] = urun_listesi
-        except:
+        except Exception:
             pass
     except:
         pass
@@ -508,6 +366,8 @@ def init_queue_view(frame_parent):
     
     # Zebra görünümü uygula
     apply_zebra_striping(queue_table)
+    attach_sortable_headers(queue_table)
+    attach_ctrl_a_select(queue_table)
 
 def refresh_queue_view():
     """GUI'deki kuyruk tablosunu günceller"""
@@ -538,6 +398,54 @@ def apply_zebra_striping(table):
         else:
             table.item(item, tags=("odd",))
 # ================== END ZEBRA STRIPING ==================
+
+
+
+
+def attach_sortable_headers(table: ttk.Treeview):
+    """Treeview kolon başlıklarına tıklanarak sıralama davranışı ekler"""
+
+    sort_states = {}
+
+    def sort_by_column(col):
+        reverse = sort_states.get(col, False)
+
+        data = []
+        for item_id in table.get_children(''):
+            raw_value = table.set(item_id, col)
+            value_str = (str(raw_value).strip() if raw_value is not None else "")
+
+            sort_key = value_str.lower()
+            # Numerik değerlere öncelik ver
+            try:
+                numerik = float(value_str.replace('.', '').replace(',', '.'))
+                sort_key = (0, numerik)
+            except ValueError:
+                sort_key = (1, sort_key)
+
+            data.append((sort_key, item_id))
+
+        data.sort(reverse=reverse)
+
+        for index, (_, item_id) in enumerate(data):
+            table.move(item_id, '', index)
+
+        sort_states[col] = not reverse
+        table.heading(col, command=lambda c=col: sort_by_column(c))
+
+    for col in table["columns"]:
+        table.heading(col, command=lambda c=col: sort_by_column(c))
+
+
+def attach_ctrl_a_select(table: ttk.Treeview):
+    """Ctrl+A ile tüm satırları seçme desteği ekler"""
+
+    def select_all(event=None):
+        table.selection_set(table.get_children())
+        return "break"
+
+    table.bind("<Control-a>", select_all)
+    table.bind("<Control-A>", select_all)
 
 # ================== START CONTROLLER ==================
 def add_kart(tur_combo, ad_entry, birim_entry, fiyat_entry, kdv_combo,
@@ -701,7 +609,7 @@ def create_temp_excel_from_table(
 
 # ================== START GUI ==================
 def gui_main():
-    global urun_table, kart_table
+    global urun_table, kart_table, urun_combo
     global musteri_vkn, musteri_unvan, musteri_adi, musteri_soyadi
     global musteri_vd_sehir, musteri_vd, musteri_adres, musteri_adres_sehir, musteri_ilce
     global fatura_aciklama
@@ -729,27 +637,28 @@ def gui_main():
                 if obj is table:
                     table_name = name
                     break
-            
+
             # Seçili öğeleri güvenli şekilde sil
             deleted_count = 0
-            for item in table.selection():
+            for item in list(table.selection()):
                 values = table.item(item, "values")
-                if values:
-                    # Tablo türüne göre güvenli silme fonksiyonu kullan
-                    success = False
-                    if table_name == "kart_table":
-                        success = safe_delete_urun_kart(values)
-                    elif table_name == "musteri_table":
-                        success = safe_delete_musteri(values[0])  # VKN ile sil
-                    else:
-                        # Bilinmeyen tablo, eski yöntemi kullan
-                        table.delete(item)
-                        success = True
-                    
-                    if success:
-                        table.delete(item)
-                        deleted_count += 1
-            
+                if not values:
+                    continue
+
+                success = False
+                if table_name == "kart_table":
+                    success = safe_delete_urun_kart(values)
+                elif table_name == "musteri_table":
+                    success = safe_delete_musteri(values[0])  # VKN ile sil
+                else:
+                    table.delete(item)
+                    deleted_count += 1
+                    continue
+
+                if success:
+                    table.delete(item)
+                    deleted_count += 1
+
             if deleted_count > 0:
                 tk.messagebox.showinfo("Başarılı", f"{deleted_count} öğe silindi")
             
@@ -759,6 +668,9 @@ def gui_main():
             if iid:
                 if iid not in table.selection():
                     table.selection_set(iid)
+                else:
+                    # Çoklu seçimde mevcut seçimi koru
+                    table.focus(iid)
                 menu.post(event.x_root, event.y_root)
         table.bind("<Button-3>", on_right_click)
     # --- Sağ Tık Silme Menüsü Sonu ---
@@ -921,15 +833,22 @@ def gui_main():
             "VKN/TCKN", "Adı", "Soyadı", "Unvan", "Vergi D. Şehir",
             "Vergi Dairesi", "Adres Şehir", "İlçe", "Şubeler", "Adres"
         )
-        table = ttk.Treeview(win, columns=columns, show="headings", height=12)
+        
+        # İç kapsayıcı: tablo + scrollbar yan yana
+        table_container = tk.Frame(win)
+        table_container.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        table = ttk.Treeview(table_container, columns=columns, show="headings", height=12)
         for col in columns:
             table.heading(col, text=col)
             table.column(col, width=120, anchor="center")
-        table.pack(fill="both", expand=True, side="left", padx=5, pady=5)
+        table.pack(fill="both", expand=True, side="left")
         # Scrollbar
-        scroll = ttk.Scrollbar(win, orient="vertical", command=table.yview)
+        scroll = ttk.Scrollbar(table_container, orient="vertical", command=table.yview)
         table.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
+        attach_sortable_headers(table)
+        attach_ctrl_a_select(table)
 
         for child in musteri_table.get_children():
             table.insert("", "end", values=musteri_table.item(child, "values"))
@@ -1012,6 +931,8 @@ def gui_main():
 
     # Zebra görünümü uygula
     apply_zebra_striping(urun_table)
+    attach_sortable_headers(urun_table)
+    attach_ctrl_a_select(urun_table)
 
     # Inline fiyat düzenleme fonksiyonu
     def edit_price(event):
@@ -1064,14 +985,6 @@ def gui_main():
 
     tk.Label(frame_add, text="Ürün:").grid(row=0, column=0, sticky="w")
     urun_combo = ttk.Combobox(frame_add, values=[], width=25)
-    
-    # Linked fields için özel değişkenler
-    urun_combo.linked_fields = {
-            "birim": None,
-            "fiyat": None,
-            "kdv": None
-    }
-    urun_combo.kart_table = None
     urun_combo.grid(row=1, column=0, padx=5)
 
     tk.Label(frame_add, text="Miktar:").grid(row=0, column=1, sticky="w")
@@ -1104,24 +1017,7 @@ def gui_main():
         "fiyat": fiyat_entry,
         "kdv": kdv_entry
     }
-    
-    # Normal Combobox için linked fields fonksiyonu
-    def on_urun_selection(event):
-        selected_value = urun_combo.get()
-        if not (urun_combo.kart_table and urun_combo.linked_fields and selected_value):
-            return
-        for child in urun_combo.kart_table.get_children():
-            tur, ad, b, f, k = urun_combo.kart_table.item(child, "values")
-            if selected_value == f"{tur} ({ad})":
-                urun_combo.linked_fields["birim"].delete(0, "end")
-                urun_combo.linked_fields["birim"].insert(0, b)
-                urun_combo.linked_fields["fiyat"].delete(0, "end")
-                urun_combo.linked_fields["fiyat"].insert(0, f)
-                urun_combo.linked_fields["kdv"].delete(0, "end")
-                urun_combo.linked_fields["kdv"].insert(0, k)
-                break
-    
-    urun_combo.bind("<<ComboboxSelected>>", on_urun_selection)
+    urun_combo.kart_table = None
 
     def on_add_button():
         add_urun(
@@ -1194,8 +1090,6 @@ def gui_main():
             
             # Zebra görünümünü yenile
             apply_zebra_striping(urun_table)
-            
-            bulk_win.destroy()
 
         tk.Button(bulk_win, text="Faturaya İlave Et", command=add_selected_products).pack(pady=10)
     # --- Fatura Taslak Oluştur Aksiyonu ---
@@ -1218,10 +1112,58 @@ def gui_main():
     btn_frame_fatura = tk.Frame(frame_fatura, bg="#d0d0d0")
     btn_frame_fatura.pack(pady=5)
 
+    def clear_fatura_taslak_fields():
+        # Müşteri alanları
+        try:
+            musteri_vkn.delete(0, "end")
+            musteri_unvan.delete(0, "end")
+            musteri_adi.delete(0, "end")
+            musteri_soyadi.delete(0, "end")
+            musteri_vd_sehir.delete(0, "end")
+            musteri_vd.delete(0, "end")
+            musteri_adres_sehir.delete(0, "end")
+            musteri_ilce.delete(0, "end")
+            musteri_subeler.delete(0, "end")
+            musteri_adres.delete("1.0", "end")
+        except Exception:
+            pass
+
+        # Ürünler tablosu
+        try:
+            urun_table.delete(*urun_table.get_children())
+            apply_zebra_striping(urun_table)
+        except Exception:
+            pass
+
+        # Ürün ekleme alanı
+        try:
+            urun_combo.set("")
+            miktar_entry.delete(0, "end"); miktar_entry.insert(0, "1")
+            birim_entry.delete(0, "end")
+            fiyat_entry.delete(0, "end")
+            kdv_entry.delete(0, "end"); kdv_entry.insert(0, "20")
+            iskonto_entry.delete(0, "end"); iskonto_entry.insert(0, "0")
+            aciklama_entry.delete(0, "end")
+        except Exception:
+            pass
+
+        # Fatura genel açıklama
+        try:
+            fatura_aciklama.delete("1.0", "end")
+        except Exception:
+            pass
+
+    def on_click_fatura_olustur():
+        try:
+            log_yaz("⚠️ Fatura Kes özelliği kaldırıldı")
+        except Exception:
+            pass
+        clear_fatura_taslak_fields()
+
     btn_fatura_olustur = tk.Button(
         btn_frame_fatura,
         text="Fatura Taslak Oluştur",
-        command=lambda: log_yaz("⚠️ Fatura Kes özelliği kaldırıldı"),  # Fatura Kes özelliği kaldırıldı
+        command=on_click_fatura_olustur,
         bg="green",
         fg="white"
     )
@@ -1302,6 +1244,8 @@ def gui_main():
     scroll_ef.pack(side="right", fill="y")
     attach_context_delete(efatura_table)
     apply_zebra_striping(efatura_table)
+    attach_sortable_headers(efatura_table)
+    attach_ctrl_a_select(efatura_table)
     
     # E-Fatura tablosu seçim event'i
     efatura_table.bind("<<TreeviewSelect>>", lambda e: guncelle_subeler())
@@ -1325,6 +1269,8 @@ def gui_main():
     scroll_ea.pack(side="right", fill="y")
     attach_context_delete(earsiv_table)
     apply_zebra_striping(earsiv_table)
+    attach_sortable_headers(earsiv_table)
+    attach_ctrl_a_select(earsiv_table)
     
     # E-Arşiv tablosu seçim event'i
     earsiv_table.bind("<<TreeviewSelect>>", lambda e: guncelle_subeler())
@@ -1361,13 +1307,16 @@ def gui_main():
     
     # Zebra görünümü uygula
     apply_zebra_striping(kart_table)
+    attach_sortable_headers(kart_table)
+    attach_ctrl_a_select(kart_table)
 
     # 👇 Ürün Ekleme Alanı'ndaki combobox'a ürünleri yükle
     urun_listesi = []
     for child in kart_table.get_children():
         tur, ad, b, f, k = kart_table.item(child, "values")
         urun_listesi.append(f"{tur} ({ad})")
-    urun_combo['values'] = urun_listesi
+    if urun_combo:
+            urun_combo['values'] = urun_listesi
 
     # 👇 bağlantıyı burada yapıyoruz
     urun_combo.kart_table = kart_table
@@ -1561,6 +1510,8 @@ def gui_main():
     
     # Zebra görünümü uygula
     apply_zebra_striping(musteri_table)
+    attach_sortable_headers(musteri_table)
+    attach_ctrl_a_select(musteri_table)
 
     # --- Müşteri Tablosu Arama ---
     def filter_musteriler(*args):
@@ -2607,6 +2558,12 @@ def indir_secilen_faturalar():
         # Eğer şu an işlem yapılmıyorsa kuyruğu başlat
         if not fatura_indirme_aktif:
             threading.Thread(target=process_fatura_indirme_kuyrugu, daemon=True).start()
+
+        # Kuyruğa eklendikten sonra isimlendirme alanlarını temizle
+        fatura_kes_sube_combo.set("")
+        fatura_kes_personel_entry.delete(0, "end")
+        if fatura_kes_islem_turu_combo['values']:
+            fatura_kes_islem_turu_combo.set(fatura_kes_islem_turu_combo['values'][0])
         
     except Exception as e:
         log_yaz(f"❌ Fatura indirme hatası: {e}")
