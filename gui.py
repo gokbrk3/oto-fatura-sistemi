@@ -366,6 +366,7 @@ def init_queue_view(frame_parent):
     
     # Zebra görünümü uygula
     apply_zebra_striping(queue_table)
+    attach_sortable_headers(queue_table)
 
 def refresh_queue_view():
     """GUI'deki kuyruk tablosunu günceller"""
@@ -396,6 +397,43 @@ def apply_zebra_striping(table):
         else:
             table.item(item, tags=("odd",))
 # ================== END ZEBRA STRIPING ==================
+
+
+
+
+def attach_sortable_headers(table: ttk.Treeview):
+    """Treeview kolon başlıklarına tıklanarak sıralama davranışı ekler"""
+
+    sort_states = {}
+
+    def sort_by_column(col):
+        reverse = sort_states.get(col, False)
+
+        data = []
+        for item_id in table.get_children(''):
+            raw_value = table.set(item_id, col)
+            value_str = (str(raw_value).strip() if raw_value is not None else "")
+
+            sort_key = value_str.lower()
+            # Numerik değerlere öncelik ver
+            try:
+                numerik = float(value_str.replace('.', '').replace(',', '.'))
+                sort_key = (0, numerik)
+            except ValueError:
+                sort_key = (1, sort_key)
+
+            data.append((sort_key, item_id))
+
+        data.sort(reverse=reverse)
+
+        for index, (_, item_id) in enumerate(data):
+            table.move(item_id, '', index)
+
+        sort_states[col] = not reverse
+        table.heading(col, command=lambda c=col: sort_by_column(c))
+
+    for col in table["columns"]:
+        table.heading(col, command=lambda c=col: sort_by_column(c))
 
 # ================== START CONTROLLER ==================
 def add_kart(tur_combo, ad_entry, birim_entry, fiyat_entry, kdv_combo,
@@ -793,6 +831,7 @@ def gui_main():
         scroll = ttk.Scrollbar(table_container, orient="vertical", command=table.yview)
         table.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
+        attach_sortable_headers(table)
 
         for child in musteri_table.get_children():
             table.insert("", "end", values=musteri_table.item(child, "values"))
@@ -875,6 +914,7 @@ def gui_main():
 
     # Zebra görünümü uygula
     apply_zebra_striping(urun_table)
+    attach_sortable_headers(urun_table)
 
     # Inline fiyat düzenleme fonksiyonu
     def edit_price(event):
@@ -1186,6 +1226,7 @@ def gui_main():
     scroll_ef.pack(side="right", fill="y")
     attach_context_delete(efatura_table)
     apply_zebra_striping(efatura_table)
+    attach_sortable_headers(efatura_table)
     
     # E-Fatura tablosu seçim event'i
     efatura_table.bind("<<TreeviewSelect>>", lambda e: guncelle_subeler())
@@ -1209,6 +1250,7 @@ def gui_main():
     scroll_ea.pack(side="right", fill="y")
     attach_context_delete(earsiv_table)
     apply_zebra_striping(earsiv_table)
+    attach_sortable_headers(earsiv_table)
     
     # E-Arşiv tablosu seçim event'i
     earsiv_table.bind("<<TreeviewSelect>>", lambda e: guncelle_subeler())
@@ -1245,6 +1287,7 @@ def gui_main():
     
     # Zebra görünümü uygula
     apply_zebra_striping(kart_table)
+    attach_sortable_headers(kart_table)
 
     # 👇 Ürün Ekleme Alanı'ndaki combobox'a ürünleri yükle
     urun_listesi = []
@@ -1446,6 +1489,7 @@ def gui_main():
     
     # Zebra görünümü uygula
     apply_zebra_striping(musteri_table)
+    attach_sortable_headers(musteri_table)
 
     # --- Müşteri Tablosu Arama ---
     def filter_musteriler(*args):
