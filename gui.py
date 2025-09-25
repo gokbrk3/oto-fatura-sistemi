@@ -367,6 +367,7 @@ def init_queue_view(frame_parent):
     # Zebra görünümü uygula
     apply_zebra_striping(queue_table)
     attach_sortable_headers(queue_table)
+    attach_ctrl_a_select(queue_table)
 
 def refresh_queue_view():
     """GUI'deki kuyruk tablosunu günceller"""
@@ -434,6 +435,17 @@ def attach_sortable_headers(table: ttk.Treeview):
 
     for col in table["columns"]:
         table.heading(col, command=lambda c=col: sort_by_column(c))
+
+
+def attach_ctrl_a_select(table: ttk.Treeview):
+    """Ctrl+A ile tüm satırları seçme desteği ekler"""
+
+    def select_all(event=None):
+        table.selection_set(table.get_children())
+        return "break"
+
+    table.bind("<Control-a>", select_all)
+    table.bind("<Control-A>", select_all)
 
 # ================== START CONTROLLER ==================
 def add_kart(tur_combo, ad_entry, birim_entry, fiyat_entry, kdv_combo,
@@ -832,6 +844,7 @@ def gui_main():
         table.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
         attach_sortable_headers(table)
+        attach_ctrl_a_select(table)
 
         for child in musteri_table.get_children():
             table.insert("", "end", values=musteri_table.item(child, "values"))
@@ -915,6 +928,7 @@ def gui_main():
     # Zebra görünümü uygula
     apply_zebra_striping(urun_table)
     attach_sortable_headers(urun_table)
+    attach_ctrl_a_select(urun_table)
 
     # Inline fiyat düzenleme fonksiyonu
     def edit_price(event):
@@ -1227,6 +1241,7 @@ def gui_main():
     attach_context_delete(efatura_table)
     apply_zebra_striping(efatura_table)
     attach_sortable_headers(efatura_table)
+    attach_ctrl_a_select(efatura_table)
     
     # E-Fatura tablosu seçim event'i
     efatura_table.bind("<<TreeviewSelect>>", lambda e: guncelle_subeler())
@@ -1251,6 +1266,7 @@ def gui_main():
     attach_context_delete(earsiv_table)
     apply_zebra_striping(earsiv_table)
     attach_sortable_headers(earsiv_table)
+    attach_ctrl_a_select(earsiv_table)
     
     # E-Arşiv tablosu seçim event'i
     earsiv_table.bind("<<TreeviewSelect>>", lambda e: guncelle_subeler())
@@ -1288,6 +1304,7 @@ def gui_main():
     # Zebra görünümü uygula
     apply_zebra_striping(kart_table)
     attach_sortable_headers(kart_table)
+    attach_ctrl_a_select(kart_table)
 
     # 👇 Ürün Ekleme Alanı'ndaki combobox'a ürünleri yükle
     urun_listesi = []
@@ -1490,6 +1507,7 @@ def gui_main():
     # Zebra görünümü uygula
     apply_zebra_striping(musteri_table)
     attach_sortable_headers(musteri_table)
+    attach_ctrl_a_select(musteri_table)
 
     # --- Müşteri Tablosu Arama ---
     def filter_musteriler(*args):
