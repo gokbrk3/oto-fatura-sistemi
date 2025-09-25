@@ -1032,8 +1032,6 @@ def gui_main():
             
             # Zebra görünümünü yenile
             apply_zebra_striping(urun_table)
-            
-            bulk_win.destroy()
 
         tk.Button(bulk_win, text="Faturaya İlave Et", command=add_selected_products).pack(pady=10)
     # --- Fatura Taslak Oluştur Aksiyonu ---
