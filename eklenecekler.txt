@@ -1,0 +1,7 @@
+her tabloya scrollbar
+fatura kes butonuna basılınca "fatura taslak oluştur" sekmesindeki bilgiler temizlensin
+ürün ekleme alanında comboboxa yazarken ürünün aranması
+toplu ürün girişnce butona basınca sekme kapanmasın
+a-z sıralama
+ÜRÜN KARTLARINDA ARAMA YAPILDIKTAN SONRA SİLİNCE ESKİ LİSTE GELMİYOR
+TABLO TOPLU SİLME
