@@ -667,6 +667,9 @@ def gui_main():
             if iid:
                 if iid not in table.selection():
                     table.selection_set(iid)
+                else:
+                    # Çoklu seçimde mevcut seçimi koru
+                    table.focus(iid)
                 menu.post(event.x_root, event.y_root)
         table.bind("<Button-3>", on_right_click)
     # --- Sağ Tık Silme Menüsü Sonu ---
@@ -2554,6 +2557,12 @@ def indir_secilen_faturalar():
         # Eğer şu an işlem yapılmıyorsa kuyruğu başlat
         if not fatura_indirme_aktif:
             threading.Thread(target=process_fatura_indirme_kuyrugu, daemon=True).start()
+
+        # Kuyruğa eklendikten sonra isimlendirme alanlarını temizle
+        fatura_kes_sube_combo.set("")
+        fatura_kes_personel_entry.delete(0, "end")
+        if fatura_kes_islem_turu_combo['values']:
+            fatura_kes_islem_turu_combo.set(fatura_kes_islem_turu_combo['values'][0])
         
     except Exception as e:
         log_yaz(f"❌ Fatura indirme hatası: {e}")
