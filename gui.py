@@ -35,6 +35,7 @@ log_text = None
 queue_table = None
 fatura_indirme_aktif = False  # Fatura indirme durumu kontrolü
 fatura_indirme_kuyrugu = []  # Fatura indirme kuyruğu
+secilen_musteri_vknleri = set()  # Seçilen müşterilerin VKN'leri
 
 
 
@@ -248,6 +249,8 @@ def save_settings(settings):
 
 # --- Ürün Kartları ---
 def save_kartlar(kart_table):
+    """Ürün kartlarını kaydet - TEHLİKELİ: Sadece görünenleri kaydediyor!"""
+    # UYARI: Bu fonksiyon tehlikeli! Arama yapıldığında diğer ürünler kaybolabilir!
     data = []
     for child in kart_table.get_children():
         values = kart_table.item(child, "values")
@@ -278,13 +281,154 @@ def load_kartlar(kart_table):
             pass
     except:
         pass
+
+def safe_add_urun_kart(yeni_urun):
+    """Güvenli ürün kartı ekleme - mevcut ürünleri korur"""
+    try:
+        # Mevcut ürünleri oku
+        data = []
+        if os.path.exists(KARTLAR_DOSYA):
+            with open(KARTLAR_DOSYA, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        
+        # Yeni ürünü ekle
+        data.append(yeni_urun)
+        
+        # Dosyayı kaydet
+        with open(KARTLAR_DOSYA, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        return True
+    except Exception as e:
+        print(f"Ürün ekleme hatası: {e}")
+        return False
+
+def safe_update_urun_kart(eski_urun, yeni_urun):
+    """Güvenli ürün kartı güncelleme - sadece belirtilen ürünü günceller"""
+    try:
+        # Mevcut ürünleri oku
+        if not os.path.exists(KARTLAR_DOSYA):
+            return False
+        
+        with open(KARTLAR_DOSYA, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # İlgili ürünü bul ve güncelle
+        updated = False
+        for i, urun in enumerate(data):
+            # Ürün adı ve türüyle eşleştir
+            if len(urun) >= 2 and urun[0] == eski_urun[0] and urun[1] == eski_urun[1]:
+                data[i] = yeni_urun
+                updated = True
+                break
+        
+        if updated:
+            # Dosyayı kaydet
+            with open(KARTLAR_DOSYA, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            return True
+        return False
+    except Exception as e:
+        print(f"Ürün güncelleme hatası: {e}")
+        return False
+
+def safe_delete_urun_kart(silinecek_urun):
+    """Güvenli ürün kartı silme - sadece belirtilen ürünü siler"""
+    try:
+        # Mevcut ürünleri oku
+        if not os.path.exists(KARTLAR_DOSYA):
+            return False
+        
+        with open(KARTLAR_DOSYA, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # İlgili ürünü bul ve sil
+        new_data = []
+        deleted = False
+        for urun in data:
+            # Ürün adı ve türüyle eşleştir
+            if len(urun) >= 2 and urun[0] == silinecek_urun[0] and urun[1] == silinecek_urun[1]:
+                deleted = True
+                continue  # Bu ürünü atlayarak sil
+            new_data.append(urun)
+        
+        if deleted:
+            # Dosyayı kaydet
+            with open(KARTLAR_DOSYA, "w", encoding="utf-8") as f:
+                json.dump(new_data, f, ensure_ascii=False, indent=4)
+            return True
+        return False
+    except Exception as e:
+        print(f"Ürün silme hatası: {e}")
+        return False
+
 # --- Ürün Kartları Sonu ---
 
 # --- Müşteriler ---
 def save_musteriler(musteri_table):
+    """Müşteri tablosunu kaydet - SADECE seçili müşteriyi güncelle, diğerlerini koru"""
+    # UYARI: Bu fonksiyon tehlikeli! Sadece tablodaki görünen müşterileri kaydediyor
+    # Arama yapıldığında diğer müşteriler kaybolabilir!
+    # Daha güvenli bir güncelleme sistemi gerekli
     data = [musteri_table.item(c, "values") for c in musteri_table.get_children()]
     with open(MUSTERI_DOSYA, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
+def safe_update_musteri(vkn, new_values):
+    """Güvenli müşteri güncelleme - sadece belirtilen VKN'li müşteriyi günceller"""
+    try:
+        # Tüm müşterileri oku
+        if not os.path.exists(MUSTERI_DOSYA):
+            return False
+        
+        with open(MUSTERI_DOSYA, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # İlgili müşteriyi bul ve güncelle
+        updated = False
+        for i, musteri in enumerate(data):
+            if len(musteri) > 0 and musteri[0] == vkn:
+                data[i] = new_values
+                updated = True
+                break
+        
+        if updated:
+            # Dosyayı kaydet
+            with open(MUSTERI_DOSYA, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            return True
+        return False
+    except Exception as e:
+        print(f"Müşteri güncelleme hatası: {e}")
+        return False
+
+def safe_delete_musteri(vkn):
+    """Güvenli müşteri silme - sadece belirtilen VKN'li müşteriyi siler"""
+    try:
+        # Tüm müşterileri oku
+        if not os.path.exists(MUSTERI_DOSYA):
+            return False
+        
+        with open(MUSTERI_DOSYA, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # İlgili müşteriyi bul ve sil
+        new_data = []
+        deleted = False
+        for musteri in data:
+            if len(musteri) > 0 and musteri[0] == vkn:
+                deleted = True
+                continue  # Bu müşteriyi atlayarak sil
+            new_data.append(musteri)
+        
+        if deleted:
+            # Dosyayı kaydet
+            with open(MUSTERI_DOSYA, "w", encoding="utf-8") as f:
+                json.dump(new_data, f, ensure_ascii=False, indent=4)
+            return True
+        return False
+    except Exception as e:
+        print(f"Müşteri silme hatası: {e}")
+        return False
 
 def load_musteriler(musteri_table):
     if not os.path.exists(MUSTERI_DOSYA):
@@ -391,19 +535,28 @@ def add_kart(tur_combo, ad_entry, birim_entry, fiyat_entry, kdv_combo,
     values = (urun_tur, urun_ad, birim, fiyat, kdv)
 
     if editing_id:  # Güncelleme modu
-        kart_table.item(editing_id, values=values)
+        # Eski değerleri al
+        eski_values = kart_table.item(editing_id, "values")
+        if safe_update_urun_kart(eski_values, values):
+            kart_table.item(editing_id, values=values)
+        else:
+            tk.messagebox.showerror("Hata", "Ürün güncellenemedi!")
+            return None
     else:  # Yeni ekleme
-        kart_table.insert("", "end", values=values)
-        full_name = f"{urun_tur} ({urun_ad})"
-        current = list(urun_combo['values'])
-        if full_name not in current:
-            urun_combo['values'] = current + [full_name]
-    
-    # Zebra görünümünü yenile
-    apply_zebra_striping(kart_table)
-    
-    # Dosyaya kaydet
-    save_kartlar(kart_table)
+        # Güvenli ürün ekleme kullan
+        if safe_add_urun_kart(values):
+            # Tabloya da ekle
+            kart_table.insert("", "end", values=values)
+            full_name = f"{urun_tur} ({urun_ad})"
+            current = list(urun_combo['values'])
+            if full_name not in current:
+                urun_combo['values'] = current + [full_name]
+            
+            # Zebra görünümünü yenile
+            apply_zebra_striping(kart_table)
+        else:
+            tk.messagebox.showerror("Hata", "Ürün eklenemedi!")
+            return None
 
     # Alanları sıfırla
     tur_combo.set("")
@@ -529,17 +682,18 @@ def create_temp_excel_from_table(
 
 # ================== START GUI ==================
 def gui_main():
-    root = tk.Tk()
-    root.title("Oto Fatura Programı")
-    root.configure(bg="#d0d0d0")  # Ana pencere arka plan rengi - daha koyu gri
     global urun_table, kart_table
     global musteri_vkn, musteri_unvan, musteri_adi, musteri_soyadi
     global musteri_vd_sehir, musteri_vd, musteri_adres, musteri_adres_sehir, musteri_ilce
     global fatura_aciklama
     global zirve_sirket_combo, zirve_user, zirve_pass
-    global log_text   # 👈 Buraya ekledik
-    global headless_var
-    global fatura_kes_sube_combo, fatura_kes_personel_entry, fatura_kes_islem_turu_combo  # Fatura Kes sekmesi kaldırıldı, değişkenler korundu
+    global log_text, headless_var
+    global fatura_kes_sube_combo, fatura_kes_personel_entry, fatura_kes_islem_turu_combo
+    global efatura_table, earsiv_table, secilen_musteri_vknleri
+    
+    root = tk.Tk()
+    root.title("Oto Fatura Programı")
+    root.configure(bg="#d0d0d0")  # Ana pencere arka plan rengi - daha koyu gri
 
 
 
@@ -550,8 +704,36 @@ def gui_main():
     def attach_context_delete(table: ttk.Treeview):
         menu = tk.Menu(root, tearoff=0)
         def delete_selected():
+            # Hangi tabloda olduğumuzu anla
+            table_name = None
+            for name, obj in globals().items():
+                if obj is table:
+                    table_name = name
+                    break
+            
+            # Seçili öğeleri güvenli şekilde sil
+            deleted_count = 0
             for item in table.selection():
-                table.delete(item)
+                values = table.item(item, "values")
+                if values:
+                    # Tablo türüne göre güvenli silme fonksiyonu kullan
+                    success = False
+                    if table_name == "kart_table":
+                        success = safe_delete_urun_kart(values)
+                    elif table_name == "musteri_table":
+                        success = safe_delete_musteri(values[0])  # VKN ile sil
+                    else:
+                        # Bilinmeyen tablo, eski yöntemi kullan
+                        table.delete(item)
+                        success = True
+                    
+                    if success:
+                        table.delete(item)
+                        deleted_count += 1
+            
+            if deleted_count > 0:
+                tk.messagebox.showinfo("Başarılı", f"{deleted_count} öğe silindi")
+            
         menu.add_command(label="Sil", command=delete_selected)
         def on_right_click(event):
             iid = table.identify_row(event.y)
@@ -1041,14 +1223,28 @@ def gui_main():
     fatura_kes_sube_combo = ttk.Combobox(frame_fatura_secim, values=[], width=15)
     fatura_kes_sube_combo.grid(row=0, column=1, padx=5, pady=5)
     
-    tk.Label(frame_fatura_secim, text="Personel:").grid(row=0, column=2, sticky="w", padx=5, pady=5)
-    fatura_kes_personel_entry = tk.Entry(frame_fatura_secim, width=20)
-    fatura_kes_personel_entry.grid(row=0, column=3, padx=5, pady=5)
+    # Şube ekleme butonu
+    def sube_ekle():
+        """Manuel girilen şubeyi seçilen müşterilerin şubeler alanına ekle"""
+        yeni_sube = fatura_kes_sube_combo.get().strip()
+        if not yeni_sube:
+            tk.messagebox.showwarning("Uyarı", "Lütfen şube adı giriniz!")
+            return
+        
+        # Şubeyi müşterilere ekle
+        sube_musterilere_ekle(yeni_sube)
     
-    tk.Label(frame_fatura_secim, text="İşlem Türü:").grid(row=0, column=4, sticky="w", padx=5, pady=5)
+    btn_sube_ekle = tk.Button(frame_fatura_secim, text="+ Şube Ekle", command=sube_ekle, bg="#90EE90", fg="black")
+    btn_sube_ekle.grid(row=0, column=2, padx=5, pady=5)
+    
+    tk.Label(frame_fatura_secim, text="Personel:").grid(row=0, column=3, sticky="w", padx=5, pady=5)
+    fatura_kes_personel_entry = tk.Entry(frame_fatura_secim, width=20)
+    fatura_kes_personel_entry.grid(row=0, column=4, padx=5, pady=5)
+    
+    tk.Label(frame_fatura_secim, text="İşlem Türü:").grid(row=0, column=5, sticky="w", padx=5, pady=5)
     fatura_kes_islem_turu_combo = ttk.Combobox(frame_fatura_secim, values=["SRV", "STŞ", "YEDEK PARÇA"], width=12)
     fatura_kes_islem_turu_combo.set("SRV")
-    fatura_kes_islem_turu_combo.grid(row=0, column=5, padx=5, pady=5)
+    fatura_kes_islem_turu_combo.grid(row=0, column=6, padx=5, pady=5)
     
     # Fatura İndir butonu
     btn_fatura_indir = tk.Button(frame_fatura_secim, text="Fatura İndir", command=lambda: indir_secilen_faturalar(), 
@@ -1262,11 +1458,17 @@ def gui_main():
                 tk.messagebox.showwarning("Uyarı", "Ürün türü ve adı zorunludur!")
                 return
             
-            # Seçili ürünü güncelle
-            kart_table.item(selected[0], values=(yeni_tur, yeni_ad, yeni_birim, yeni_fiyat, yeni_kdv))
+            # Eski ürün bilgilerini al
+            eski_values = kart_table.item(selected[0], "values")
+            yeni_values = (yeni_tur, yeni_ad, yeni_birim, yeni_fiyat, yeni_kdv)
             
-            # Dosyaya kaydet
-            save_kartlar(kart_table)
+            # Güvenli güncelleme kullan
+            if safe_update_urun_kart(eski_values, yeni_values):
+                # Tabloda da güncelle
+                kart_table.item(selected[0], values=yeni_values)
+            else:
+                tk.messagebox.showerror("Hata", "Ürün güncellenemedi!")
+                return
             
             # Ürün listesini güncelle
             urun_listesi = []
@@ -1395,8 +1597,15 @@ def gui_main():
                     new_values.append(entries[i].get("1.0", "end").strip())
                 else:
                     new_values.append(entries[i].get())
-            musteri_table.item(selected[0], values=new_values)
-            save_musteriler(musteri_table)
+            
+            # Güvenli güncelleme kullan (sadece bu müşteriyi güncelle)
+            vkn = new_values[0]  # VKN ilk alanda
+            if safe_update_musteri(vkn, new_values):
+                # Tabloyu da güncelle
+                musteri_table.item(selected[0], values=new_values)
+                tk.messagebox.showinfo("Başarılı", "Müşteri bilgileri güncellendi")
+            else:
+                tk.messagebox.showerror("Hata", "Müşteri güncellenemedi")
             win.destroy()
 
         tk.Button(win, text="Kaydet", command=save_changes).grid(row=len(labels), column=1, pady=10)
@@ -1410,9 +1619,20 @@ def gui_main():
 
         answer = tk.messagebox.askyesno("Onay", "Bu müşteriyi silmek istediğinize emin misiniz?")
         if answer:
+            # Her seçili müşteriyi güvenli şekilde sil
+            deleted_count = 0
             for item in selected:
-                musteri_table.delete(item)
-            save_musteriler(musteri_table)
+                values = musteri_table.item(item, "values")
+                if values and len(values) > 0:
+                    vkn = values[0]
+                    if safe_delete_musteri(vkn):
+                        musteri_table.delete(item)
+                        deleted_count += 1
+            
+            if deleted_count > 0:
+                tk.messagebox.showinfo("Başarılı", f"{deleted_count} müşteri silindi")
+            else:
+                tk.messagebox.showerror("Hata", "Hiçbir müşteri silinemedi")
 
     # Düzenle ve Sil butonları
     btn_frame = tk.Frame(frame_musteriler, bg="#d0d0d0")
@@ -1877,6 +2097,7 @@ def guncelle_subeler():
             return
         
         # Seçilen faturalardaki VKN'leri topla
+        global secilen_musteri_vknleri
         secilen_vknler = set()
         
         # E-Fatura seçilenlerini işle
@@ -1896,6 +2117,9 @@ def guncelle_subeler():
                 if vkn:
                     secilen_vknler.add(vkn)
                     log_yaz(f"📋 E-Arşiv VKN seçildi: {vkn}")
+        
+        # Global değişkeni güncelle
+        secilen_musteri_vknleri = secilen_vknler
         
         # VKN'ler ile eşleşen müşterilerin şubelerini bul
         eslesen_subeler = set()
@@ -2341,6 +2565,107 @@ def indir_secilen_faturalar():
         
     except Exception as e:
         log_yaz(f"❌ Fatura indirme hatası: {e}")
+
+# ================== START ŞUBE YÖNETİMİ FONKSİYONLARI ==================
+
+def sube_musterilere_ekle(yeni_sube):
+    """Seçilen müşterilerin şubeler alanına (index 8) yeni şubeyi ekle"""
+    global secilen_musteri_vknleri
+    
+    try:
+        if not secilen_musteri_vknleri:
+            log_yaz("⚠️ Önce fatura seçiniz!")
+            return
+        
+        # musteriler.json'u oku
+        if not os.path.exists("musteriler.json"):
+            log_yaz("⚠️ musteriler.json dosyası bulunamadı")
+            return
+        
+        with open("musteriler.json", "r", encoding="utf-8") as f:
+            musteriler = json.load(f)
+        
+        guncellenen_sayisi = 0
+        
+        for musteri in musteriler:
+            if len(musteri) > 0:
+                vkn = musteri[0].strip()
+                if vkn in secilen_musteri_vknleri:
+                    # Müşteri unvanını al
+                    unvan = musteri[3] if len(musteri) > 3 else "Bilinmeyen Müşteri"
+                    
+                    # Mevcut şubeleri kontrol et (index 8)
+                    mevcut_subeler = []
+                    if len(musteri) > 8 and musteri[8]:
+                        mevcut_subeler = [s.strip() for s in musteri[8].split(',') if s.strip()]
+                    
+                    # Yeni şube zaten yoksa ekle
+                    if yeni_sube not in mevcut_subeler:
+                        mevcut_subeler.append(yeni_sube)
+                        # Şubeler alanını güncelle (virgülle ayırarak)
+                        if len(musteri) > 8:
+                            musteri[8] = ','.join(mevcut_subeler)
+                        else:
+                            # Eğer liste yeterince uzun değilse, eksik alanları boş string ile doldur
+                            while len(musteri) < 9:
+                                musteri.append("")
+                            musteri[8] = yeni_sube
+                        
+                        guncellenen_sayisi += 1
+                        log_yaz(f"✅ '{unvan}' müşterisine '{yeni_sube}' şubesi eklendi")
+                    else:
+                        log_yaz(f"⚠️ '{unvan}' müşterisinde '{yeni_sube}' şubesi zaten mevcut")
+        
+        if guncellenen_sayisi > 0:
+            # Dosyayı kaydet
+            with open("musteriler.json", "w", encoding="utf-8") as f:
+                json.dump(musteriler, f, ensure_ascii=False, indent=4)
+            
+            log_yaz(f"✅ {guncellenen_sayisi} müşteriye '{yeni_sube}' şubesi eklendi")
+            
+            # Şube combobox'ını yeniden güncelle
+            guncelle_sube_combobox()
+        else:
+            log_yaz("⚠️ Hiçbir müşteriye yeni şube eklenemedi")
+            
+    except Exception as e:
+        log_yaz(f"❌ Şube ekleme hatası: {e}")
+
+def guncelle_sube_combobox():
+    """Seçilen müşterilere göre şube combobox'ını güncelle"""
+    global secilen_musteri_vknleri, fatura_kes_sube_combo
+    
+    try:
+        if not os.path.exists("musteriler.json"):
+            return
+        
+        with open("musteriler.json", "r", encoding="utf-8") as f:
+            musteriler = json.load(f)
+        
+        # Seçilen müşterilerin şubelerini topla
+        eslesen_subeler = set()
+        for musteri in musteriler:
+            if len(musteri) > 0:
+                vkn = musteri[0].strip()
+                if vkn in secilen_musteri_vknleri and len(musteri) > 8:
+                    if musteri[8]:
+                        subeler_listesi = [s.strip() for s in musteri[8].split(',') if s.strip()]
+                        for sube in subeler_listesi:
+                            eslesen_subeler.add(sube)
+        
+        # Combobox'ı güncelle
+        if eslesen_subeler:
+            subeler_listesi = sorted(list(eslesen_subeler))
+            fatura_kes_sube_combo['values'] = subeler_listesi
+            # Mevcut değer geçerli değilse ilkini seç
+            if fatura_kes_sube_combo.get() not in subeler_listesi:
+                fatura_kes_sube_combo.set(subeler_listesi[0])
+            log_yaz(f"🔄 Şube listesi güncellendi: {', '.join(subeler_listesi)}")
+        
+    except Exception as e:
+        log_yaz(f"❌ Şube combobox güncelleme hatası: {e}")
+
+# ================== END ŞUBE YÖNETİMİ FONKSİYONLARI ==================
 
 print("✅ GUI dosyası çalışıyor")
 print("🔄 GitHub güncelleme kontrolü - 2025-09-20 17:15:00")
