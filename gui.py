@@ -637,27 +637,28 @@ def gui_main():
                 if obj is table:
                     table_name = name
                     break
-            
+
             # Seçili öğeleri güvenli şekilde sil
             deleted_count = 0
-            for item in table.selection():
+            for item in list(table.selection()):
                 values = table.item(item, "values")
-                if values:
-                    # Tablo türüne göre güvenli silme fonksiyonu kullan
-                    success = False
-                    if table_name == "kart_table":
-                        success = safe_delete_urun_kart(values)
-                    elif table_name == "musteri_table":
-                        success = safe_delete_musteri(values[0])  # VKN ile sil
-                    else:
-                        # Bilinmeyen tablo, eski yöntemi kullan
-                        table.delete(item)
-                        success = True
-                    
-                    if success:
-                        table.delete(item)
-                        deleted_count += 1
-            
+                if not values:
+                    continue
+
+                success = False
+                if table_name == "kart_table":
+                    success = safe_delete_urun_kart(values)
+                elif table_name == "musteri_table":
+                    success = safe_delete_musteri(values[0])  # VKN ile sil
+                else:
+                    table.delete(item)
+                    deleted_count += 1
+                    continue
+
+                if success:
+                    table.delete(item)
+                    deleted_count += 1
+
             if deleted_count > 0:
                 tk.messagebox.showinfo("Başarılı", f"{deleted_count} öğe silindi")
             
