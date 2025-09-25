@@ -378,27 +378,39 @@ def safe_update_musteri(vkn, new_values):
     try:
         # Tüm müşterileri oku
         if not os.path.exists(MUSTERI_DOSYA):
+            print(f"❌ {MUSTERI_DOSYA} dosyası bulunamadı")
             return False
         
         with open(MUSTERI_DOSYA, "r", encoding="utf-8") as f:
             data = json.load(f)
         
+        print(f"🔍 Aranan VKN: '{vkn}', Toplam müşteri sayısı: {len(data)}")
+        
         # İlgili müşteriyi bul ve güncelle
         updated = False
         for i, musteri in enumerate(data):
-            if len(musteri) > 0 and musteri[0] == vkn:
-                data[i] = new_values
-                updated = True
-                break
+            if len(musteri) > 0:
+                # VKN'leri normalize et (başındaki sıfırları temizle)
+                musteri_vkn = str(musteri[0]).strip().lstrip('0') or '0'
+                aranan_vkn = str(vkn).strip().lstrip('0') or '0'
+                
+                if musteri_vkn == aranan_vkn:
+                    print(f"✅ Müşteri bulundu! İndex: {i}, VKN: '{musteri[0]}' -> '{aranan_vkn}'")
+                    data[i] = new_values
+                    updated = True
+                    break
         
         if updated:
             # Dosyayı kaydet
             with open(MUSTERI_DOSYA, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
+            print("✅ Müşteri başarıyla güncellendi")
             return True
-        return False
+        else:
+            print(f"❌ VKN '{vkn}' ile müşteri bulunamadı")
+            return False
     except Exception as e:
-        print(f"Müşteri güncelleme hatası: {e}")
+        print(f"❌ Müşteri güncelleme hatası: {e}")
         return False
 
 def safe_delete_musteri(vkn):
@@ -415,9 +427,13 @@ def safe_delete_musteri(vkn):
         new_data = []
         deleted = False
         for musteri in data:
-            if len(musteri) > 0 and musteri[0] == vkn:
-                deleted = True
-                continue  # Bu müşteriyi atlayarak sil
+            if len(musteri) > 0:
+                # VKN'leri normalize et
+                musteri_vkn = str(musteri[0]).strip().lstrip('0') or '0'
+                aranan_vkn = str(vkn).strip().lstrip('0') or '0'
+                if musteri_vkn == aranan_vkn:
+                    deleted = True
+                    continue  # Bu müşteriyi atlayarak sil
             new_data.append(musteri)
         
         if deleted:
@@ -485,7 +501,10 @@ def init_queue_view(frame_parent):
         queue_table.heading(col, text=col)
         queue_table.column(col, width=200, anchor="center")
 
-    queue_table.pack(fill="both", expand=True)
+    queue_table.pack(fill="both", expand=True, side="left")
+    scroll = ttk.Scrollbar(queue_frame, orient="vertical", command=queue_table.yview)
+    queue_table.configure(yscrollcommand=scroll.set)
+    scroll.pack(side="right", fill="y")
     
     # Zebra görünümü uygula
     apply_zebra_striping(queue_table)
@@ -906,7 +925,11 @@ def gui_main():
         for col in columns:
             table.heading(col, text=col)
             table.column(col, width=120, anchor="center")
-        table.pack(fill="both", expand=True, padx=5, pady=5)
+        table.pack(fill="both", expand=True, side="left", padx=5, pady=5)
+        # Scrollbar
+        scroll = ttk.Scrollbar(win, orient="vertical", command=table.yview)
+        table.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
 
         for child in musteri_table.get_children():
             table.insert("", "end", values=musteri_table.item(child, "values"))
@@ -983,7 +1006,7 @@ def gui_main():
     urun_table.pack(fill="both", expand=True, side="left")
 
     scroll = ttk.Scrollbar(frame_urun, orient="vertical", command=urun_table.yview)
-    urun_table.configure(yscroll=scroll.set)
+    urun_table.configure(yscrollcommand=scroll.set)
     scroll.pack(side="right", fill="y")
     attach_context_delete(urun_table)
 
@@ -1217,13 +1240,13 @@ def gui_main():
     frame_fatura_secim = tk.LabelFrame(frame_fatura_indir, text="Fatura İsimlendirme", padx=10, pady=10, bg="#d0d0d0")
     frame_fatura_secim.pack(fill="x", pady=10)
     
-    # Şube, Personel, İşlem seçimi
+    # Tek satır: Şube, Personel, İşlem Türü, Fatura İndir (büyük textboxlar ile)
     tk.Label(frame_fatura_secim, text="Şube:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
     global fatura_kes_sube_combo
-    fatura_kes_sube_combo = ttk.Combobox(frame_fatura_secim, values=[], width=15)
+    fatura_kes_sube_combo = ttk.Combobox(frame_fatura_secim, values=[], width=24)  # 12'den 24'e çıkarıldı
     fatura_kes_sube_combo.grid(row=0, column=1, padx=5, pady=5)
     
-    # Şube ekleme butonu
+    # Şube ekleme butonu - çok küçük gri "+" butonu
     def sube_ekle():
         """Manuel girilen şubeyi seçilen müşterilerin şubeler alanına ekle"""
         yeni_sube = fatura_kes_sube_combo.get().strip()
@@ -1234,23 +1257,25 @@ def gui_main():
         # Şubeyi müşterilere ekle
         sube_musterilere_ekle(yeni_sube)
     
-    btn_sube_ekle = tk.Button(frame_fatura_secim, text="+ Şube Ekle", command=sube_ekle, bg="#90EE90", fg="black")
-    btn_sube_ekle.grid(row=0, column=2, padx=5, pady=5)
+    btn_sube_ekle = tk.Button(frame_fatura_secim, text="+", command=sube_ekle, 
+                             bg="#E8E8E8", fg="black", font=("Arial", 8, "bold"),
+                             width=1, height=1, relief="solid", bd=1)
+    btn_sube_ekle.grid(row=0, column=2, padx=2, pady=5)
     
-    tk.Label(frame_fatura_secim, text="Personel:").grid(row=0, column=3, sticky="w", padx=5, pady=5)
-    fatura_kes_personel_entry = tk.Entry(frame_fatura_secim, width=20)
+    tk.Label(frame_fatura_secim, text="Personel:").grid(row=0, column=3, sticky="w", padx=(15,5), pady=5)
+    fatura_kes_personel_entry = tk.Entry(frame_fatura_secim, width=24)  # 12'den 24'e çıkarıldı
     fatura_kes_personel_entry.grid(row=0, column=4, padx=5, pady=5)
     
-    tk.Label(frame_fatura_secim, text="İşlem Türü:").grid(row=0, column=5, sticky="w", padx=5, pady=5)
+    tk.Label(frame_fatura_secim, text="İşlem Türü:").grid(row=0, column=5, sticky="w", padx=(15,5), pady=5)
     fatura_kes_islem_turu_combo = ttk.Combobox(frame_fatura_secim, values=["SRV", "STŞ", "YEDEK PARÇA"], width=12)
     fatura_kes_islem_turu_combo.set("SRV")
     fatura_kes_islem_turu_combo.grid(row=0, column=6, padx=5, pady=5)
     
-    # Fatura İndir butonu
+    # Fatura İndir butonu - aynı satırda, sağda (daha geniş aralık)
     btn_fatura_indir = tk.Button(frame_fatura_secim, text="Fatura İndir", command=lambda: indir_secilen_faturalar(), 
-                                bg="#FF9800", fg="white", font=("Arial", 10, "bold"), 
-                                relief="raised", bd=2, padx=15, pady=5)
-    btn_fatura_indir.grid(row=0, column=6, padx=10, pady=5)
+                                bg="#4CAF50", fg="white", font=("Arial", 9, "normal"), 
+                                relief="raised", bd=2, padx=10, pady=5)
+    btn_fatura_indir.grid(row=0, column=7, padx=15, pady=5)
     
     # --- Faturaları Oku Butonu (En altta, küçük) ---
     btn_faturalari_oku = tk.Button(frame_fatura_indir, text="Faturaları Oku", command=lambda: read_invoices_from_zirve(), 
@@ -1271,7 +1296,10 @@ def gui_main():
         efatura_table.heading(col, text=col)
         efatura_table.column(col, width=120, anchor="center")
     
-    efatura_table.pack(fill="both", expand=True, pady=5)
+    efatura_table.pack(fill="both", expand=True, side="left", pady=5)
+    scroll_ef = ttk.Scrollbar(frame_efatura, orient="vertical", command=efatura_table.yview)
+    efatura_table.configure(yscrollcommand=scroll_ef.set)
+    scroll_ef.pack(side="right", fill="y")
     attach_context_delete(efatura_table)
     apply_zebra_striping(efatura_table)
     
@@ -1291,7 +1319,10 @@ def gui_main():
         earsiv_table.heading(col, text=col)
         earsiv_table.column(col, width=120, anchor="center")
     
-    earsiv_table.pack(fill="both", expand=True, pady=5)
+    earsiv_table.pack(fill="both", expand=True, side="left", pady=5)
+    scroll_ea = ttk.Scrollbar(frame_earsiv, orient="vertical", command=earsiv_table.yview)
+    earsiv_table.configure(yscrollcommand=scroll_ea.set)
+    scroll_ea.pack(side="right", fill="y")
     attach_context_delete(earsiv_table)
     apply_zebra_striping(earsiv_table)
     
@@ -1311,13 +1342,20 @@ def gui_main():
     search_entry_kart.pack(fill="x", padx=5, pady=2)
 
     kart_columns = ("Ürün Türü", "Ürün Adı", "Birim", "Fiyat", "KDV %")
-    kart_table = ttk.Treeview(frame_kartlar, columns=kart_columns, show="headings", height=10)
+    # İç kapsayıcı: tablo + scrollbar yan yana
+    kart_table_container = tk.Frame(frame_kartlar, bg="#d0d0d0")
+    kart_table_container.pack(fill="both", expand=True, pady=10)
+
+    kart_table = ttk.Treeview(kart_table_container, columns=kart_columns, show="headings", height=10)
 
     for col in kart_columns:
         kart_table.heading(col, text=col)
         kart_table.column(col, width=150, anchor="center")
 
-    kart_table.pack(fill="both", expand=True, pady=10)
+    kart_table.pack(fill="both", expand=True, side="left")
+    scroll_kart = ttk.Scrollbar(kart_table_container, orient="vertical", command=kart_table.yview)
+    kart_table.configure(yscrollcommand=scroll_kart.set)
+    scroll_kart.pack(side="right", fill="y")
     attach_context_delete(kart_table)
     load_kartlar(kart_table)
     
@@ -1504,13 +1542,20 @@ def gui_main():
         "VKN/TCKN", "Adı", "Soyadı", "Unvan", "Vergi D. Şehir",
         "Vergi Dairesi", "Adres Şehir", "İlçe", "Şubeler", "Adres"
     )
-    musteri_table = ttk.Treeview(frame_musteriler, columns=musteri_columns, show="headings", height=12)
+    # İç kapsayıcı: tablo + scrollbar yan yana
+    musteri_table_container = tk.Frame(frame_musteriler, bg="#d0d0d0")
+    musteri_table_container.pack(fill="both", expand=True, pady=10)
+
+    musteri_table = ttk.Treeview(musteri_table_container, columns=musteri_columns, show="headings", height=12)
 
     for col in musteri_columns:
         musteri_table.heading(col, text=col)
         musteri_table.column(col, width=120, anchor="center")
 
-    musteri_table.pack(fill="both", expand=True, pady=10)
+    musteri_table.pack(fill="both", expand=True, side="left")
+    scroll_mus = ttk.Scrollbar(musteri_table_container, orient="vertical", command=musteri_table.yview)
+    musteri_table.configure(yscrollcommand=scroll_mus.set)
+    scroll_mus.pack(side="right", fill="y")
     attach_context_delete(musteri_table)
     load_musteriler(musteri_table)
     
@@ -2589,8 +2634,10 @@ def sube_musterilere_ekle(yeni_sube):
         
         for musteri in musteriler:
             if len(musteri) > 0:
-                vkn = musteri[0].strip()
-                if vkn in secilen_musteri_vknleri:
+                vkn = str(musteri[0]).strip().lstrip('0') or '0'
+                # Seçilen VKN'leri de normalize et
+                normalized_secilen = {str(v).strip().lstrip('0') or '0' for v in secilen_musteri_vknleri}
+                if vkn in normalized_secilen:
                     # Müşteri unvanını al
                     unvan = musteri[3] if len(musteri) > 3 else "Bilinmeyen Müşteri"
                     
@@ -2646,8 +2693,10 @@ def guncelle_sube_combobox():
         eslesen_subeler = set()
         for musteri in musteriler:
             if len(musteri) > 0:
-                vkn = musteri[0].strip()
-                if vkn in secilen_musteri_vknleri and len(musteri) > 8:
+                vkn = str(musteri[0]).strip().lstrip('0') or '0'
+                # Seçilen VKN'leri de normalize et
+                normalized_secilen = {str(v).strip().lstrip('0') or '0' for v in secilen_musteri_vknleri}
+                if vkn in normalized_secilen and len(musteri) > 8:
                     if musteri[8]:
                         subeler_listesi = [s.strip() for s in musteri[8].split(',') if s.strip()]
                         for sube in subeler_listesi:
