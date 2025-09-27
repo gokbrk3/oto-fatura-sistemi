@@ -599,6 +599,211 @@ def create_temp_excel_from_table(
 
     wb.save(output_path)
     return output_path
+def _to_float_safe(val):
+    """Değeri güvenli şekilde float'a çevirir"""
+    if val is None or val == "":
+        return 0.0
+    s = str(val).strip().replace(",", ".")
+    try:
+        return float(s)
+    except:
+        return 0.0
+
+def create_temp_excel_from_fatura_data(
+    musteri_bilgileri,
+    urun_listesi,
+    aciklama,
+    template_file="zirve_excel_şablon.xlsx",
+    output_file="test_fatura_zirve.xlsx"
+):
+    """
+    GUI'den gelen fatura verilerini alır, Zirve şablonuna göre geçici Excel dosyası oluşturur.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    template_path = os.path.join(base_dir, template_file)
+    output_path = os.path.join(base_dir, output_file)
+
+    if not os.path.exists(template_path):
+        raise FileNotFoundError(f"Zirve şablon dosyası bulunamadı: {template_path}")
+
+    wb = load_workbook(template_path)
+    ws = wb.active
+
+    # İlk satıra müşteri bilgilerini yaz (Şirket, Fatura Başlığı, vs.)
+    ws["A1"] = "Şirket1"  # Sabit değer - template'e göre ayarlanabilir
+    ws["B1"] = musteri_bilgileri["unvan"]  # Fatura Başlığı
+    ws["C1"] = musteri_bilgileri["vergi_no"]  # Vergi No / TC
+    ws["D1"] = musteri_bilgileri["vd_sehir"]  # Vergi D. Şehri
+    ws["E1"] = musteri_bilgileri["vd"]  # Vergi D.
+    ws["F1"] = musteri_bilgileri["adres"]  # Adres
+    ws["G1"] = musteri_bilgileri["adres_sehir"]  # Adres Şehir
+    ws["H1"] = musteri_bilgileri["ilce"]  # Adres İlçe
+
+    # Ürünleri başlatan satır
+    row_idx = 2
+    for urun in urun_listesi:
+        miktar_f = _to_float_safe(urun["miktar"])
+        fiyat_f = _to_float_safe(urun["birim_fiyat"])
+        iskonto_yuzde = _to_float_safe(urun["iskonto_orani"])
+
+        # İskonto tutarını hesapla
+        iskonto_tutar = round((fiyat_f * miktar_f) * (iskonto_yuzde / 100.0), 2)
+
+        # KDV yüzde (boşsa 0)
+        try:
+            kdv_yuzde = int(float(urun["kdv_orani"])) if str(urun["kdv_orani"]).strip() != "" else 0
+        except:
+            kdv_yuzde = 0
+
+        # KDV tutarı hesapla (iskonto sonrası)
+        kdv_tutar = round(((fiyat_f * miktar_f) - iskonto_tutar) * (kdv_yuzde / 100.0), 2)
+
+        # Birim kodları eşleştirmesi
+        birim_kodlari = {
+            "ADET": "C62",
+            "KG": "KGM",
+            "LT": "LTR",
+            "M": "MTR",
+            "M2": "MTK",
+            "M3": "MTQ",
+            "TON": "TNE",
+            "GRAM": "GRM",
+            "LITRE": "LTR",
+            "METRE": "MTR"
+        }
+        
+        birim_text = urun["birim"].upper().strip() if urun["birim"] else "ADET"
+        birim_yazi = birim_kodlari.get(birim_text, birim_text)
+
+        # Excel sütunlarına sırayla yaz
+        ws[f"A{row_idx}"] = urun["urun_adi"]
+        ws[f"B{row_idx}"] = miktar_f if urun["miktar"] != "" else None
+        ws[f"C{row_idx}"] = birim_yazi
+        ws[f"D{row_idx}"] = fiyat_f
+        ws[f"E{row_idx}"] = iskonto_yuzde
+        ws[f"F{row_idx}"] = iskonto_tutar
+        ws[f"G{row_idx}"] = kdv_yuzde
+        ws[f"H{row_idx}"] = kdv_tutar
+        ws[f"I{row_idx}"] = urun["aciklama"]
+
+        row_idx += 1
+
+    wb.save(output_path)
+    return output_path
+
+def process_fatura_queue():
+    """Fatura oluşturma kuyruğunu işler"""
+    global fatura_queue, is_processing, zirve_user, zirve_pass, headless_var
+    
+    if not fatura_queue:
+        return
+    
+    is_processing = True
+    log_yaz(f"🚀 Fatura oluşturma kuyruğu başlatılıyor... (Toplam: {len(fatura_queue)} fatura)")
+    
+    # Chrome driver'ı başlat
+    driver = None
+    try:
+        service = Service(ChromeDriverManager().install())
+        options = Options()
+        
+        # Headless modu kontrol et
+        if headless_var and headless_var.get():
+            options.add_argument("--headless")
+            log_yaz("🤖 Headless modda çalışılıyor")
+        else:
+            options.add_argument("--start-maximized")
+        
+        options.add_argument("--disable-web-security")
+        options.add_argument("--disable-features=VizDisplayCompositor")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--no-sandbox")
+        
+        driver = webdriver.Chrome(service=service, options=options)
+        if not (headless_var and headless_var.get()):
+            driver.maximize_window()
+        
+        # Zirve portalına giriş yap
+        log_yaz("🔐 Zirve portalına giriş yapılıyor...")
+        
+        # Zirve bilgilerini JSON'dan oku
+        try:
+            with open("zirve_bilgileri.json", "r", encoding="utf-8") as f:
+                zirve_bilgileri = json.load(f)
+            
+            # İlk şirketi kullan (varsayılan)
+            if zirve_bilgileri:
+                ilk_sirket = list(zirve_bilgileri.keys())[0]
+                kullanici = zirve_bilgileri[ilk_sirket].get("kullanici", "").strip()
+                sifre = zirve_bilgileri[ilk_sirket].get("sifre", "").strip()
+            else:
+                log_yaz("❌ Zirve bilgileri bulunamadı! Lütfen 'Zirve Bağlantı' sekmesinden bilgileri girin.")
+                return
+                
+        except Exception as e:
+            log_yaz(f"❌ Zirve bilgileri okunamadı: {e}")
+            return
+        
+        if not kullanici or not sifre:
+            log_yaz("❌ Kullanıcı adı veya şifre boş! Lütfen 'Zirve Bağlantı' sekmesinden bilgileri girin.")
+            return
+        
+        # Portal girişi
+        login_portal(driver, kullanici, sifre)
+        log_yaz("✅ Portal girişi başarılı")
+        
+        # Kuyruktaki her faturayı işle
+        while fatura_queue:
+            action, excel_path, musteri_bilgileri, fatura_bilgileri = fatura_queue.pop(0)
+            
+            try:
+                log_yaz(f"📋 Fatura işleniyor: {musteri_bilgileri['unvan']}")
+                
+                # 1) Fatura oluşturma sayfasına git
+                create_invoice_simple(driver, musteri_bilgileri)
+                
+                # 2) Müşteri bilgilerini kontrol/düzenle
+                check_customer_and_edit(driver, musteri_bilgileri)
+                
+                # 3) Ürünleri Excel'den yükle
+                upload_products_from_excel(driver, excel_path)
+                
+                # 4) Açıklama ekle
+                if fatura_bilgileri.get("aciklama"):
+                    add_invoice_note(driver, fatura_bilgileri["aciklama"])
+                
+                # 5) Kaydet & Kapat
+                save_and_close_invoice(driver)
+                
+                log_yaz(f"✅ Fatura başarıyla oluşturuldu: {musteri_bilgileri['unvan']}")
+                
+                # Geçici Excel dosyasını sil
+                try:
+                    if os.path.exists(excel_path):
+                        os.remove(excel_path)
+                        log_yaz(f"🗑️ Geçici dosya silindi: {excel_path}")
+                except Exception:
+                    pass
+                
+                # Kuyruk tablosunu güncelle
+                refresh_queue_view()
+                
+                # Sonraki fatura için kısa bekleme
+                time.sleep(2)
+                
+            except Exception as e:
+                log_yaz(f"❌ Fatura oluşturma hatası: {e}")
+                continue
+        
+        log_yaz("✅ Fatura oluşturma kuyruğu tamamlandı")
+        
+    except Exception as e:
+        log_yaz(f"❌ Kuyruk işleme hatası: {e}")
+    finally:
+        if driver:
+            driver.quit()
+        is_processing = False
+
 # ================== END EXCEL ==================
 
 
@@ -934,48 +1139,66 @@ def gui_main():
     attach_sortable_headers(urun_table)
     attach_ctrl_a_select(urun_table)
 
-    # Inline fiyat düzenleme fonksiyonu
-    def edit_price(event):
-        item = urun_table.selection()[0] if urun_table.selection() else None
-        if not item:
+    # Inline düzenleme fonksiyonu (Miktar ve Birim Fiyat için)
+    editable_columns = {
+        "#2": {"index": 1, "numeric": True},   # Miktar
+        "#4": {"index": 3, "numeric": True},   # Birim Fiyat
+    }
+
+    def edit_cell(event):
+        if urun_table.identify_region(event.x, event.y) != "cell":
             return
-        
-        # Mevcut fiyatı al
-        values = list(urun_table.item(item, "values"))
-        current_price = values[3]  # Birim Fiyat
-        
-        # Hücrenin konumunu bul
-        bbox = urun_table.bbox(item, "#4")  # "Birim Fiyat" sütunu
+
+        item_id = urun_table.identify_row(event.y)
+        column_id = urun_table.identify_column(event.x)
+
+        if not item_id or column_id not in editable_columns:
+            return
+
+        column_info = editable_columns[column_id]
+        values = list(urun_table.item(item_id, "values"))
+        current_value = values[column_info["index"]]
+
+        bbox = urun_table.bbox(item_id, column_id)
         if not bbox:
             return
-        
-        # Entry widget'ı oluştur
+
         edit_entry = tk.Entry(urun_table, font=("Arial", 9))
         edit_entry.place(x=bbox[0], y=bbox[1], width=bbox[2], height=bbox[3])
-        edit_entry.insert(0, current_price)
+        edit_entry.insert(0, current_value)
         edit_entry.select_range(0, tk.END)
-        edit_entry.focus()
-        
-        def save_price():
-            try:
-                new_price = float(edit_entry.get())
-                values[3] = str(new_price)
-                urun_table.item(item, values=values)
-                edit_entry.destroy()
-            except ValueError:
-                tk.messagebox.showerror("Hata", "Geçerli bir sayı giriniz!")
-                edit_entry.destroy()
-        
+        edit_entry.focus_set()
+
+        def save_value():
+            new_text = edit_entry.get().strip()
+
+            if column_info["numeric"]:
+                try:
+                    new_number = float(new_text.replace(",", "."))
+                    if column_id == "#2":
+                        # Miktarları tam sayı olarak göstermek daha okunabilir
+                        new_text_formatted = str(int(new_number)) if new_number.is_integer() else str(new_number)
+                    else:
+                        new_text_formatted = str(new_number)
+                    values[column_info["index"]] = new_text_formatted
+                except ValueError:
+                    messagebox.showerror("Hata", "Geçerli bir sayı giriniz!")
+                    edit_entry.destroy()
+                    return
+            else:
+                values[column_info["index"]] = new_text
+
+            urun_table.item(item_id, values=values)
+            edit_entry.destroy()
+
         def cancel_edit():
             edit_entry.destroy()
-        
-        # Event'leri bağla
-        edit_entry.bind("<Return>", lambda e: save_price())
-        edit_entry.bind("<Escape>", lambda e: cancel_edit())
-        edit_entry.bind("<FocusOut>", lambda e: save_price())  # Başka yere tıklayınca kaydet
 
-    # Çift tıklama event'ini bağla
-    urun_table.bind("<Double-1>", edit_price)
+        edit_entry.bind("<Return>", lambda e: save_value())
+        edit_entry.bind("<Escape>", lambda e: cancel_edit())
+        edit_entry.bind("<FocusOut>", lambda e: save_value())
+
+    urun_table.bind("<Double-1>", edit_cell)
 
     # --- Ürün Tablosu Sonu ---
 
@@ -1027,6 +1250,91 @@ def gui_main():
 
     tk.Button(frame_add, text="Ürün Ekle", command=on_add_button).grid(row=1, column=7, padx=5)
     tk.Button(frame_add, text="Toplu Ürün Girişi", command=lambda: open_bulk_add_window()).grid(row=1, column=8, padx=5)
+    
+    # Toplu Adet Düzenleme butonu
+    def open_bulk_quantity_edit():
+        selected_items = urun_table.selection()
+        if not selected_items:
+            tk.messagebox.showwarning("Uyarı", "Lütfen düzenlemek istediğiniz ürünleri seçin!")
+            return
+        
+        # Popup pencere oluştur
+        quantity_win = tk.Toplevel(root)
+        quantity_win.title("Toplu Adet Düzenleme")
+        quantity_win.geometry("300x130")
+        quantity_win.resizable(False, False)
+        quantity_win.configure(bg="#d0d0d0")
+        
+        # Pencereyi ortalama
+        quantity_win.transient(root)
+        quantity_win.grab_set()
+        
+        # Ana frame
+        main_frame = tk.Frame(quantity_win, padx=20, pady=20, bg="#d0d0d0")
+        main_frame.pack(fill="both", expand=True)
+        
+        # Bilgi etiketi
+        info_label = tk.Label(main_frame, text=f"{len(selected_items)} ürün seçildi", 
+                             font=("Arial", 10), bg="#d0d0d0")
+        info_label.pack(pady=(0, 15))
+        
+        # Miktar girişi frame (yatay yerleşim)
+        quantity_frame = tk.Frame(main_frame, bg="#d0d0d0")
+        quantity_frame.pack(pady=(0, 15))
+        
+        tk.Label(quantity_frame, text="Yeni Miktar:", font=("Arial", 10), bg="#d0d0d0").pack(side="left", padx=(0, 10))
+        quantity_entry = tk.Entry(quantity_frame, font=("Arial", 11), width=15)
+        quantity_entry.pack(side="left")
+        quantity_entry.focus_set()
+        
+        # Buton çerçevesi
+        button_frame = tk.Frame(main_frame, bg="#d0d0d0")
+        button_frame.pack(fill="x")
+        
+        def apply_quantity():
+            try:
+                new_quantity = quantity_entry.get().strip()
+                if not new_quantity:
+                    tk.messagebox.showerror("Hata", "Lütfen bir miktar giriniz!")
+                    return
+                
+                # Sayısal değer kontrolü
+                float_val = float(new_quantity.replace(",", "."))
+                if float_val <= 0:
+                    tk.messagebox.showerror("Hata", "Miktar sıfırdan büyük olmalıdır!")
+                    return
+                
+                # Tam sayı ise tam sayı olarak göster
+                if float_val.is_integer():
+                    formatted_quantity = str(int(float_val))
+                else:
+                    formatted_quantity = str(float_val)
+                
+                # Seçili ürünlerin miktarlarını güncelle
+                for item in selected_items:
+                    values = list(urun_table.item(item, "values"))
+                    values[1] = formatted_quantity  # Miktar sütunu (index 1)
+                    urun_table.item(item, values=values)
+                
+                quantity_win.destroy()
+                
+            except ValueError:
+                tk.messagebox.showerror("Hata", "Geçerli bir sayı giriniz!")
+        
+        def cancel_edit():
+            quantity_win.destroy()
+        
+        # Butonlar
+        tk.Button(button_frame, text="Uygula", command=apply_quantity, 
+                 bg="#4CAF50", fg="white", font=("Arial", 10)).pack(side="left", padx=(0, 10))
+        tk.Button(button_frame, text="İptal", command=cancel_edit, 
+                 bg="#f44336", fg="white", font=("Arial", 10)).pack(side="left")
+        
+        # Enter ve Escape tuşları
+        quantity_entry.bind("<Return>", lambda e: apply_quantity())
+        quantity_win.bind("<Escape>", lambda e: cancel_edit())
+    
+    tk.Button(frame_add, text="Toplu Adet Düzenle", command=open_bulk_quantity_edit).grid(row=1, column=9, padx=5)
     # --- Ürün Ekleme Alanı Sonu ---
 
 
@@ -1155,10 +1463,89 @@ def gui_main():
 
     def on_click_fatura_olustur():
         try:
-            log_yaz("⚠️ Fatura Kes özelliği kaldırıldı")
-        except Exception:
-            pass
-        clear_fatura_taslak_fields()
+            # Müşteri bilgilerini kontrol et
+            vkn = musteri_vkn.get().strip()
+            unvan = musteri_unvan.get().strip()
+            
+            if not vkn or not unvan:
+                tk.messagebox.showwarning("Uyarı", "Lütfen müşteri VKN ve unvan bilgilerini girin!")
+                return
+            
+            # Ürün listesini kontrol et
+            urun_sayisi = len(urun_table.get_children())
+            if urun_sayisi == 0:
+                tk.messagebox.showwarning("Uyarı", "Lütfen en az bir ürün ekleyin!")
+                return
+            
+            # Müşteri bilgilerini hazırla
+            musteri_bilgileri = {
+                "vergi_no": vkn,
+                "unvan": unvan,
+                "adi": musteri_adi.get().strip(),
+                "soyadi": musteri_soyadi.get().strip(),
+                "vd_sehir": musteri_vd_sehir.get().strip(),
+                "vd": musteri_vd.get().strip(),
+                "adres_sehir": musteri_adres_sehir.get().strip(),
+                "ilce": musteri_ilce.get().strip(),
+                "subeler": musteri_subeler.get().strip(),
+                "adres": musteri_adres.get("1.0", "end").strip()
+            }
+            
+            # Ürün listesini hazırla
+            urun_listesi = []
+            for child in urun_table.get_children():
+                values = urun_table.item(child, "values")
+                urun_listesi.append({
+                    "urun_adi": values[0],
+                    "miktar": values[1],
+                    "birim": values[2],
+                    "birim_fiyat": values[3],
+                    "kdv_orani": values[4],
+                    "iskonto_orani": values[5],
+                    "aciklama": values[6]
+                })
+            
+            # Fatura açıklaması
+            aciklama = fatura_aciklama.get("1.0", "end").strip()
+            
+            # Fatura bilgilerini kuyruğa ekle
+            fatura_bilgileri = {
+                "musteri": musteri_bilgileri,
+                "urunler": urun_listesi,
+                "aciklama": aciklama,
+                "timestamp": time.time()
+            }
+            
+            # Geçici Excel dosyası oluştur
+            try:
+                excel_path = create_temp_excel_from_fatura_data(musteri_bilgileri, urun_listesi, aciklama)
+                log_yaz(f"📄 Geçici Excel dosyası oluşturuldu: {excel_path}")
+            except Exception as excel_error:
+                log_yaz(f"❌ Excel dosyası oluşturulamadı: {excel_error}")
+                tk.messagebox.showerror("Hata", f"Excel dosyası oluşturulamadı: {excel_error}")
+                return
+            
+            # Global kuyruğa ekle
+            global fatura_queue
+            fatura_queue.append(("create_invoice", excel_path, musteri_bilgileri, fatura_bilgileri))
+            
+            log_yaz(f"✅ Fatura taslağı kuyruğa eklendi: {unvan} ({urun_sayisi} ürün)")
+            
+            # Kuyruk tablosunu güncelle
+            refresh_queue_view()
+            
+            # Kuyruk işlemeyi başlat (eğer çalışmıyorsa)
+            if not is_processing:
+                threading.Thread(target=process_fatura_queue, daemon=True).start()
+            
+            # Alanları temizle
+            clear_fatura_taslak_fields()
+            
+            tk.messagebox.showinfo("Başarılı", "Fatura taslağı kuyruğa eklendi!")
+            
+        except Exception as e:
+            log_yaz(f"❌ Fatura taslağı oluşturma hatası: {e}")
+            tk.messagebox.showerror("Hata", f"Fatura taslağı oluşturulamadı: {e}")
 
     btn_fatura_olustur = tk.Button(
         btn_frame_fatura,
@@ -1209,7 +1596,7 @@ def gui_main():
     fatura_kes_personel_entry.grid(row=0, column=4, padx=5, pady=5)
     
     tk.Label(frame_fatura_secim, text="İşlem Türü:").grid(row=0, column=5, sticky="w", padx=(15,5), pady=5)
-    fatura_kes_islem_turu_combo = ttk.Combobox(frame_fatura_secim, values=["SRV", "STŞ", "YEDEK PARÇA"], width=12)
+    fatura_kes_islem_turu_combo = ttk.Combobox(frame_fatura_secim, values=["SRV", "STŞ", "YP", "SRV_YP", "TOPTAN"], width=12)
     fatura_kes_islem_turu_combo.set("SRV")
     fatura_kes_islem_turu_combo.grid(row=0, column=6, padx=5, pady=5)
     
@@ -1219,11 +1606,65 @@ def gui_main():
                                 relief="raised", bd=2, padx=10, pady=5)
     btn_fatura_indir.grid(row=0, column=7, padx=15, pady=5)
     
-    # --- Faturaları Oku Butonu (En altta, küçük) ---
-    btn_faturalari_oku = tk.Button(frame_fatura_indir, text="Faturaları Oku", command=lambda: read_invoices_from_zirve(), 
-                                  bg="#4CAF50", fg="white", font=("Arial", 9, "normal"), 
-                                  relief="raised", bd=2, padx=10, pady=5)
-    btn_faturalari_oku.pack(side="bottom", pady=5)
+    # --- Alt buton çubuğu: Chrome Aç | Faturaları Oku | Chrome Kapat ---
+    bottom_bar = tk.Frame(frame_fatura_indir, bg="#d0d0d0")
+    bottom_bar.pack(side="bottom", pady=5)
+
+    def open_chrome_session():
+        try:
+            global driver_global
+            if driver_global is not None:
+                log_yaz("⚠️ Chrome zaten açık")
+                return
+            service = Service(ChromeDriverManager().install())
+            options = webdriver.ChromeOptions()
+            options.add_argument("--start-maximized")
+            options.add_argument("--disable-web-security")
+            options.add_argument("--disable-features=VizDisplayCompositor")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--no-sandbox")
+
+            # Tarihli indirme klasörü
+            date_folder = time.strftime("%Y-%m-%d")
+            download_base = os.path.join(os.getcwd(), "indirilen_faturalar")
+            download_dir = os.path.join(download_base, date_folder)
+            os.makedirs(download_dir, exist_ok=True)
+            prefs = {
+                "download.default_directory": download_dir,
+                "download.prompt_for_download": False,
+                "download.directory_upgrade": True,
+                "safebrowsing.enabled": True,
+                "profile.default_content_settings.popups": 0,
+                "profile.default_content_setting_values.automatic_downloads": 1
+            }
+            options.add_experimental_option("prefs", prefs)
+
+            driver_global = webdriver.Chrome(service=service, options=options)
+            driver_global.maximize_window()
+            log_yaz("🚀 Chrome açıldı")
+        except Exception as e:
+            log_yaz(f"❌ Chrome açılamadı: {e}")
+
+    def close_chrome_session():
+        try:
+            global driver_global
+            if driver_global is not None:
+                driver_global.quit()
+                driver_global = None
+                log_yaz("🔒 Chrome kapatıldı")
+            else:
+                log_yaz("ℹ️ Kapatılacak açık Chrome yok")
+        except Exception as e:
+            log_yaz(f"❌ Chrome kapatma hatası: {e}")
+
+    tk.Button(bottom_bar, text="Chrome Aç", command=open_chrome_session,
+              bg="#1976D2", fg="white", font=("Arial", 9), relief="raised", bd=2, padx=10, pady=5).pack(side="left", padx=5)
+
+    tk.Button(bottom_bar, text="Faturaları Oku", command=lambda: read_invoices_from_zirve(),
+              bg="#4CAF50", fg="white", font=("Arial", 9), relief="raised", bd=2, padx=10, pady=5).pack(side="left", padx=5)
+
+    tk.Button(bottom_bar, text="Chrome Kapat", command=close_chrome_session,
+              bg="#E53935", fg="white", font=("Arial", 9), relief="raised", bd=2, padx=10, pady=5).pack(side="left", padx=5)
     
     # --- E-Fatura Tablosu ---
     frame_efatura = tk.LabelFrame(frame_fatura_indir, text="E-Fatura Listesi", padx=10, pady=10, bg="#d0d0d0")
@@ -1827,12 +2268,26 @@ def read_invoices_from_zirve():
             # Zirve portalına giriş
             driver.get("https://yeniportal.zirvedonusum.com/accounting/login")
             
-            # Giriş bilgileri
-            username = zirve_user.get().strip()
-            password = zirve_pass.get().strip()
+            # Giriş bilgileri - JSON'dan oku
+            try:
+                with open("zirve_bilgileri.json", "r", encoding="utf-8") as f:
+                    zirve_bilgileri = json.load(f)
+                
+                # İlk şirketi kullan (varsayılan)
+                if zirve_bilgileri:
+                    ilk_sirket = list(zirve_bilgileri.keys())[0]
+                    username = zirve_bilgileri[ilk_sirket].get("kullanici", "").strip()
+                    password = zirve_bilgileri[ilk_sirket].get("sifre", "").strip()
+                else:
+                    log_yaz("❌ Zirve bilgileri bulunamadı! Lütfen 'Zirve Bağlantı' sekmesinden bilgileri girin.")
+                    return
+                    
+            except Exception as e:
+                log_yaz(f"❌ Zirve bilgileri okunamadı: {e}")
+                return
             
             if not (username and password):
-                log_yaz("❌ Zirve giriş bilgileri eksik!")
+                log_yaz("❌ Zirve giriş bilgileri eksik! Lütfen 'Zirve Bağlantı' sekmesinden bilgileri girin.")
                 return
             
             # Giriş yap
@@ -2152,7 +2607,7 @@ def guncelle_subeler():
 
 def process_fatura_indirme_kuyrugu():
     """Fatura indirme kuyruğunu işler - Chrome'u bir kez açıp tüm faturaları indirir"""
-    global fatura_indirme_aktif, fatura_indirme_kuyrugu, zirve_user, zirve_pass
+    global fatura_indirme_aktif, fatura_indirme_kuyrugu
     
     if not fatura_indirme_kuyrugu:
         return
@@ -2174,10 +2629,12 @@ def process_fatura_indirme_kuyrugu():
         options.add_argument("--disable-extensions")
         options.add_argument("--no-sandbox")
         
-        # İndirme klasörünü ayarla
-        download_dir = os.path.join(os.getcwd(), "indirilen_faturalar")
+        # İndirme klasörünü ayarla (tarihe göre alt klasör)
+        date_folder = time.strftime("%Y-%m-%d")
+        download_base = os.path.join(os.getcwd(), "indirilen_faturalar")
+        download_dir = os.path.join(download_base, date_folder)
         if not os.path.exists(download_dir):
-            os.makedirs(download_dir)
+            os.makedirs(download_dir, exist_ok=True)
         
         prefs = {
             "download.default_directory": download_dir,
@@ -2196,11 +2653,26 @@ def process_fatura_indirme_kuyrugu():
         log_yaz("🔐 Zirve portalına giriş yapılıyor...")
         driver.get("https://yeniportal.zirvedonusum.com/accounting/login")
         
-        kullanici = zirve_user.get().strip()
-        sifre = zirve_pass.get().strip()
+        # Zirve bilgilerini JSON'dan oku
+        try:
+            with open("zirve_bilgileri.json", "r", encoding="utf-8") as f:
+                zirve_bilgileri = json.load(f)
+            
+            # İlk şirketi kullan (varsayılan)
+            if zirve_bilgileri:
+                ilk_sirket = list(zirve_bilgileri.keys())[0]
+                kullanici = zirve_bilgileri[ilk_sirket].get("kullanici", "").strip()
+                sifre = zirve_bilgileri[ilk_sirket].get("sifre", "").strip()
+            else:
+                log_yaz("❌ Zirve bilgileri bulunamadı! Lütfen 'Zirve Bağlantı' sekmesinden bilgileri girin.")
+                return
+                
+        except Exception as e:
+            log_yaz(f"❌ Zirve bilgileri okunamadı: {e}")
+            return
         
         if not kullanici or not sifre:
-            log_yaz("❌ Kullanıcı adı veya şifre boş!")
+            log_yaz("❌ Kullanıcı adı veya şifre boş! Lütfen 'Zirve Bağlantı' sekmesinden bilgileri girin.")
             return
         
         # Portal giriş
@@ -2211,6 +2683,7 @@ def process_fatura_indirme_kuyrugu():
         toplam_indirilen = 0
         
         # Kuyruktaki her işlemi sırayla işle
+        i = 0  # İndeks sayacı
         while fatura_indirme_kuyrugu:
             kuyruk_item = fatura_indirme_kuyrugu.pop(0)
             
@@ -2224,9 +2697,11 @@ def process_fatura_indirme_kuyrugu():
                 personel_degeri = kuyruk_item['personel_degeri']
                 islem_turu_degeri = kuyruk_item['islem_turu_degeri']
                 
-                # Bu işlem için fatura indirme
+                # Bu işlem için fatura indirme (ilk fatura mı kontrolü)
+                ilk_fatura = (i == 0)  # İlk fatura mı?
+                i += 1  # İndeksi artır
                 indirilen_sayi = fatura_indir_session(driver, efatura_selected, earsiv_selected, 
-                                                     sube_degeri, personel_degeri, islem_turu_degeri, download_dir)
+                                                     sube_degeri, personel_degeri, islem_turu_degeri, download_dir, ilk_fatura)
                 toplam_indirilen += indirilen_sayi
                 
             except Exception as e:
@@ -2249,47 +2724,77 @@ def process_fatura_indirme_kuyrugu():
         fatura_indirme_aktif = False
         log_yaz("✅ Fatura indirme kuyruğu tamamlandı")
 
-def fatura_indir_session(driver, efatura_selected, earsiv_selected, sube_degeri, personel_degeri, islem_turu_degeri, download_dir):
+def fatura_indir_session(driver, efatura_selected, earsiv_selected, sube_degeri, personel_degeri, islem_turu_degeri, download_dir, ilk_fatura_mi=True):
     """Mevcut driver session'ını kullanarak faturaları indirir"""
     indirilen_sayisi = 0
     
     try:
         # E-Fatura seçilenlerini işle
         if efatura_selected:
-            log_yaz("📄 E-Fatura sayfasına gidiliyor...")
-            
-            # E-Dönüşüm menüsüne tıkla
-            try:
-                e_donusum_menu = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
-                )
-                e_donusum_menu.click()
-                log_yaz("✅ E-Dönüşüm menüsüne tıklandı")
-            except Exception as e:
-                log_yaz(f"❌ E-Dönüşüm menüsü bulunamadı: {e}")
-                return indirilen_sayisi
-            
-            # E-Fatura menüsüne tıkla
-            try:
-                e_fatura_menu = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eInvoice']"))
-                )
-                e_fatura_menu.click()
-                log_yaz("✅ E-Fatura menüsüne tıklandı")
-            except Exception as e:
-                log_yaz(f"❌ E-Fatura menüsü bulunamadı: {e}")
-                return indirilen_sayisi
-            
-            # Giden Faturalar linkine tıkla
-            try:
-                giden_faturalar = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[@href='/accounting/eInvoiceOutbox']"))
-                )
-                giden_faturalar.click()
-                log_yaz("✅ Giden Faturalar linkine tıklandı")
-            except Exception as e:
-                log_yaz(f"❌ Giden Faturalar linki bulunamadı: {e}")
-                return indirilen_sayisi
+            # Sadece ilk faturada menülere tıkla
+            if ilk_fatura_mi:
+                log_yaz("📄 E-Fatura sayfasına gidiliyor...")
+                
+                # E-Dönüşüm menüsüne tıkla
+                try:
+                    e_donusum_menu = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
+                    )
+                    e_donusum_menu.click()
+                    log_yaz("✅ E-Dönüşüm menüsüne tıklandı")
+                except Exception as e:
+                    log_yaz(f"❌ E-Dönüşüm menüsü bulunamadı: {e}")
+                    return indirilen_sayisi
+                
+                # E-Fatura menüsüne tıkla
+                try:
+                    e_fatura_menu = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eInvoice']"))
+                    )
+                    e_fatura_menu.click()
+                    log_yaz("✅ E-Fatura menüsüne tıklandı")
+                except Exception as e:
+                    log_yaz(f"❌ E-Fatura menüsü bulunamadı: {e}")
+                    return indirilen_sayisi
+                
+                # Giden Faturalar linkine tıkla - 3 kez deneme
+                giden_faturalar_bulundu = False
+                for deneme in range(3):
+                    try:
+                        # Sayfayı yenile
+                        if deneme > 0:
+                            driver.refresh()
+                            time.sleep(2)
+                            # E-Dönüşüm menüsüne tekrar tıkla
+                            e_donusum_menu = WebDriverWait(driver, 10).until(
+                                EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
+                            )
+                            e_donusum_menu.click()
+                            time.sleep(1)
+                            # E-Fatura menüsüne tekrar tıkla
+                            e_fatura_menu = WebDriverWait(driver, 10).until(
+                                EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eInvoice']"))
+                            )
+                            e_fatura_menu.click()
+                            time.sleep(1)
+                        
+                        giden_faturalar = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.XPATH, "//a[@href='/accounting/eInvoiceOutbox']"))
+                        )
+                        giden_faturalar.click()
+                        log_yaz("✅ Giden Faturalar linkine tıklandı")
+                        giden_faturalar_bulundu = True
+                        break
+                    except Exception as e:
+                        log_yaz(f"❌ Giden Faturalar linki bulunamadı (Deneme {deneme + 1}/3): {e}")
+                        if deneme == 2:  # Son deneme
+                            log_yaz("⚠️ Giden Faturalar linki bulunamadı, bu fatura atlanıyor")
+                            return indirilen_sayisi
+                
+                if not giden_faturalar_bulundu:
+                    return indirilen_sayisi
+            else:
+                log_yaz("📄 E-Fatura sayfasında devam ediliyor...")
             
             # Tabloları bekle
             WebDriverWait(driver, 10).until(
@@ -2327,6 +2832,11 @@ def fatura_indir_session(driver, efatura_selected, earsiv_selected, sube_degeri,
                     
                     fatura_adi += f" - {fatura_no}"
                     
+                    # Dosya adında geçersiz karakterleri temizle
+                    gecersiz_karakterler = ['<', '>', ':', '"', '|', '?', '*', '/', '\\']
+                    for karakter in gecersiz_karakterler:
+                        fatura_adi = fatura_adi.replace(karakter, '-')
+                    
                     log_yaz(f"📥 E-Fatura indiriliyor: {fatura_adi}")
                     
                     # Fatura indirme işlemi
@@ -2339,37 +2849,41 @@ def fatura_indir_session(driver, efatura_selected, earsiv_selected, sube_degeri,
         
         # E-Arşiv seçilenlerini işle
         if earsiv_selected:
-            log_yaz("📄 E-Arşiv sayfasına gidiliyor...")
-            
-            # E-Arşiv sayfasına git
-            try:
-                # E-Dönüşüm menüsüne tıkla
-                e_donusum_menu = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
-                )
-                e_donusum_menu.click()
+            # Sadece ilk faturada menülere tıkla
+            if ilk_fatura_mi:
+                log_yaz("📄 E-Arşiv sayfasına gidiliyor...")
                 
-                # E-Arşiv menüsüne tıkla
-                e_arsiv_menu = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eArchive']"))
-                )
-                e_arsiv_menu.click()
-                
-                # E-Arşiv Giden Faturalar linkine tıkla
-                earsiv_giden_faturalar = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[@href='/accounting/eArchiveOutbox']"))
-                )
-                earsiv_giden_faturalar.click()
-                log_yaz("✅ E-Arşiv sayfasına gidildi")
-                
-                # Tabloları bekle
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "table"))
-                )
-                
-            except Exception as e:
-                log_yaz(f"❌ E-Arşiv sayfasına gidilemedi: {e}")
-                return indirilen_sayisi
+                # E-Arşiv sayfasına git
+                try:
+                    # E-Dönüşüm menüsüne tıkla
+                    e_donusum_menu = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#pagesTransformation']"))
+                    )
+                    e_donusum_menu.click()
+                    
+                    # E-Arşiv menüsüne tıkla
+                    e_arsiv_menu = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@data-toggle='collapse' and @href='#eArchive']"))
+                    )
+                    e_arsiv_menu.click()
+                    
+                    # E-Arşiv Giden Faturalar linkine tıkla
+                    earsiv_giden_faturalar = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//a[@href='/accounting/eArchiveOutbox']"))
+                    )
+                    earsiv_giden_faturalar.click()
+                    log_yaz("✅ E-Arşiv sayfasına gidildi")
+                    
+                    # Tabloları bekle
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "table"))
+                    )
+                    
+                except Exception as e:
+                    log_yaz(f"❌ E-Arşiv sayfasına gidilemedi: {e}")
+                    return indirilen_sayisi
+            else:
+                log_yaz("📄 E-Arşiv sayfasında devam ediliyor...")
             
             # E-Arşiv seçilenlerini işle
             for item in earsiv_selected:
@@ -2401,6 +2915,11 @@ def fatura_indir_session(driver, efatura_selected, earsiv_selected, sube_degeri,
                         fatura_adi += f" - {islem_turu_degeri}"
                     
                     fatura_adi += f" - {fatura_no}"
+                    
+                    # Dosya adında geçersiz karakterleri temizle
+                    gecersiz_karakterler = ['<', '>', ':', '"', '|', '?', '*', '/', '\\']
+                    for karakter in gecersiz_karakterler:
+                        fatura_adi = fatura_adi.replace(karakter, '-')
                     
                     log_yaz(f"📥 E-Arşiv indiriliyor: {fatura_adi}")
                     
