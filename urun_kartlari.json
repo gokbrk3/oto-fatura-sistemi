@@ -166,5 +166,47 @@
         "ADET",
         "3800",
         "20"
+    ],
+    [
+        "YEDEK PARÇA",
+        "SEDİMENT",
+        "ADET",
+        "400",
+        "20"
+    ],
+    [
+        "YEDEK PARÇA",
+        "GAC",
+        "ADET",
+        "400",
+        "20"
+    ],
+    [
+        "YEDEK PARÇA",
+        "CTO",
+        "ADET",
+        "400",
+        "20"
+    ],
+    [
+        "YEDEK PARÇA",
+        "POST",
+        "ADET",
+        "400",
+        "20"
+    ],
+    [
+        "YEDEK PARÇA",
+        "MEMBRAN",
+        "ADET",
+        "700",
+        "20"
+    ],
+    [
+        "YEDEK PARÇA",
+        "MEMBRAN 300 GPD",
+        "ADET",
+        "",
+        "20"
     ]
 ]
