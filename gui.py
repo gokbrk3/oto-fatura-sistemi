@@ -2683,6 +2683,7 @@ def process_fatura_indirme_kuyrugu():
         toplam_indirilen = 0
         
         # Kuyruktaki her işlemi sırayla işle
+        i = 0  # İndeks sayacı
         while fatura_indirme_kuyrugu:
             kuyruk_item = fatura_indirme_kuyrugu.pop(0)
             
@@ -2698,6 +2699,7 @@ def process_fatura_indirme_kuyrugu():
                 
                 # Bu işlem için fatura indirme (ilk fatura mı kontrolü)
                 ilk_fatura = (i == 0)  # İlk fatura mı?
+                i += 1  # İndeksi artır
                 indirilen_sayi = fatura_indir_session(driver, efatura_selected, earsiv_selected, 
                                                      sube_degeri, personel_degeri, islem_turu_degeri, download_dir, ilk_fatura)
                 toplam_indirilen += indirilen_sayi
